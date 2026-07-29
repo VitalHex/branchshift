@@ -4,7 +4,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
-import { JetGitError, JetGitErrorCode } from "../../git/errors";
+import { BranchShiftError, BranchShiftErrorCode } from "../../git/errors";
 import { GitService } from "../../git/gitService";
 
 const execFileAsync = promisify(execFile);
@@ -18,8 +18,8 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 async function configureIdentity(repo: string): Promise<void> {
-  await git(repo, "config", "user.name", "JetGit Test");
-  await git(repo, "config", "user.email", "jetgit@example.com");
+  await git(repo, "config", "user.name", "BranchShift Test");
+  await git(repo, "config", "user.email", "branchshift@example.com");
 }
 
 async function createTrackedRepository(): Promise<{
@@ -27,7 +27,7 @@ async function createTrackedRepository(): Promise<{
   repo: string;
   upstream: string;
 }> {
-  const base = await fs.mkdtemp(path.join(os.tmpdir(), "jetgit-update-"));
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), "branchshift-update-"));
   const repo = path.join(base, "repo");
   const upstream = path.join(base, "upstream.git");
   const origin = path.join(base, "origin.git");
@@ -140,8 +140,8 @@ describe("GitService updateBranch", () => {
       await assert.rejects(
         serviceFor(repo).updateBranch("local-only"),
         (error: unknown) =>
-          error instanceof JetGitError &&
-          error.code === JetGitErrorCode.BRANCH_NO_UPSTREAM,
+          error instanceof BranchShiftError &&
+          error.code === BranchShiftErrorCode.BRANCH_NO_UPSTREAM,
       );
     } finally {
       await fs.rm(base, { recursive: true, force: true });
@@ -176,8 +176,8 @@ describe("GitService updateBranch", () => {
       await assert.rejects(
         serviceFor(repo).updateBranch("topic"),
         (error: unknown) =>
-          error instanceof JetGitError &&
-          error.code === JetGitErrorCode.BRANCH_NON_FAST_FORWARD,
+          error instanceof BranchShiftError &&
+          error.code === BranchShiftErrorCode.BRANCH_NON_FAST_FORWARD,
       );
       assert.strictEqual(await git(repo, "rev-parse", "topic"), localTopicHead);
       assert.strictEqual(await git(repo, "branch", "--show-current"), "main");
@@ -201,8 +201,8 @@ describe("GitService updateBranch", () => {
       await assert.rejects(
         serviceFor(repo).updateBranch("topic"),
         (error: unknown) =>
-          error instanceof JetGitError &&
-          error.code === JetGitErrorCode.BRANCH_CHECKED_OUT_IN_WORKTREE &&
+          error instanceof BranchShiftError &&
+          error.code === BranchShiftErrorCode.BRANCH_CHECKED_OUT_IN_WORKTREE &&
           error.message.includes(path.basename(worktreePath)),
       );
     } finally {

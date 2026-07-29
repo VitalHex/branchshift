@@ -6,7 +6,9 @@ import { GitService } from "../../git/gitService";
 
 describe("GitService repository paths", () => {
   it("reads operation state from gitDir instead of <worktree>/.git", async () => {
-    const base = await fs.mkdtemp(path.join(os.tmpdir(), "jetgit-worktree-"));
+    const base = await fs.mkdtemp(
+      path.join(os.tmpdir(), "branchshift-worktree-"),
+    );
     const workTreeRoot = path.join(base, "worktree");
     const gitDir = path.join(base, "common", "worktrees", "wt");
     await fs.mkdir(workTreeRoot, { recursive: true });

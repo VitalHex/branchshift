@@ -40,7 +40,7 @@ export class ConflictsManager {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      "jetgit-plus.conflicts",
+      "branchshift.conflicts",
       "Conflicts",
       vscode.ViewColumn.One,
       {

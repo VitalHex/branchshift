@@ -2,11 +2,11 @@ import * as vscode from "vscode";
 import type { GitService } from "../git/gitService";
 import type { RepoRegistry } from "../git/repoRegistry";
 
-export const JETGIT_PLUS_SCHEME = "jetgit-plus";
+export const BRANCHSHIFT_SCHEME = "branchshift";
 
 /**
  * Provides virtual file content for git file revisions.
- * Uri format: jetgit-plus:/<filePath>?ref=<commitHash>
+ * Uri format: branchshift:/<filePath>?ref=<commitHash>
  *
  * Implements both TextDocumentContentProvider (for text diff) and
  * FileSystemProvider (for binary files like images).

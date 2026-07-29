@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { JetGitError, JetGitErrorCode } from "../git/errors";
+import { BranchShiftError, BranchShiftErrorCode } from "../git/errors";
 import type { RepoRegistry } from "../git/repoRegistry";
 import type { DiffFile } from "../git/types";
 import { buildGitContentUri } from "./gitUri";
@@ -97,8 +97,8 @@ export class DiffEditorManager {
   ): Promise<void> {
     const runtime = this.registry.get(repoId);
     if (!runtime) {
-      throw new JetGitError(
-        JetGitErrorCode.REPO_NOT_FOUND,
+      throw new BranchShiftError(
+        BranchShiftErrorCode.REPO_NOT_FOUND,
         `Repository not available: ${repoId}`,
       );
     }

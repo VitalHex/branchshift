@@ -6,7 +6,7 @@ import { GitContentProvider } from "../../views/gitContentProvider";
 import { buildGitContentUri } from "../../views/gitUri";
 
 /**
- * Task 21 (P2#4): every jetgit-plus:/ diff URI must carry `?repo=<repoId>` so
+ * Task 21 (P2#4): every branchshift:/ diff URI must carry `?repo=<repoId>` so
  * GitContentProvider binds the URI to the correct repo regardless of which repo
  * is currently "active". This covers the helper round-trip, the provider's
  * repo-from-query resolution (even when a different repo is active), and the
