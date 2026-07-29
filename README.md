@@ -43,8 +43,6 @@ BranchShift keeps the Git habits you already know from JetBrains IDEs: a visual 
 - Branch, author, date, and file-history filters
 - Shared commit context actions across normal and comparison logs
 
-![Git Log](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/git-graph.png)
-
 ### Commit, Shelf, and Stash
 
 - Select individual files for partial commits
@@ -61,20 +59,12 @@ Compare a local branch, remote branch, or tag with the current branch. BranchShi
 
 Right-click branches, commits, and changed files to access checkout, cherry-pick, reset, revert, merge, rebase, diff, history, source navigation, and other repository-bound actions.
 
-![Branch context menu](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/checkout.gif)
-
-![Commit context menu](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/commit-context-menu.gif)
-
 ### Conflicts and 3-way merge
 
 - Dedicated conflict list with Accept Yours, Accept Theirs, and Merge actions
 - Three-column Theirs / Result / Yours editor
 - Per-conflict actions and syntax highlighting
 - Integration with the built-in VS Code Source Control view
-
-![3-way merge editor](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/three-way-merge.png)
-
-![Conflict list](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/conflicts-list.png)
 
 ### Multi-root workspace support
 

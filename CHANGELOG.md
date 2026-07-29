@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [0.6.1] - 2026-07-29
+
+### Fixed / 修复
+- **Owned README media** — removed inherited demo GIFs and screenshots from the BranchShift README and release package. New product media will be captured from BranchShift builds instead of reusing the original fork's assets / 从 BranchShift README 与发布包中移除继承自原 Fork 的演示 GIF 和截图；后续产品媒体将基于 BranchShift 自身构建重新录制，不再复用原仓库资产
+
 ## [0.6.0] - 2026-07-29
 
 ### Changed / 变更
