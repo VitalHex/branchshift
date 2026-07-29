@@ -43,8 +43,6 @@ BranchShift 将你在 JetBrains IDE 中已经熟悉的 Git 使用习惯带到新
 - 按分支、作者、日期和文件历史过滤
 - 普通日志与比较日志复用同一套提交右键操作
 
-![Git Log](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/git-graph.png)
-
 ### Commit、Shelf 与 Stash
 
 - 按文件勾选，支持部分提交
@@ -61,20 +59,12 @@ BranchShift 将你在 JetBrains IDE 中已经熟悉的 Git 使用习惯带到新
 
 在分支、提交与变更文件上右键，即可执行 Checkout、Cherry-Pick、Reset、Revert、Merge、Rebase、Diff、文件历史和源码跳转等与仓库绑定的操作。
 
-![分支右键菜单](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/checkout.gif)
-
-![提交右键菜单](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/commit-context-menu.gif)
-
 ### 冲突处理与三路合并
 
 - 独立冲突列表，支持 Accept Yours、Accept Theirs 与 Merge
 - Theirs / Result / Yours 三栏编辑器
 - 逐冲突块操作与语法高亮
 - 与 VS Code 内置 Source Control 面板集成
-
-![三路合并编辑器](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/three-way-merge.png)
-
-![冲突列表](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/conflicts-list.png)
 
 ### Multi-root workspace
 
