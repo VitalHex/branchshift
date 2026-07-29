@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
 import { GitCache, type ReachabilityCacheEntry } from "./cache";
-import { JetGitError, JetGitErrorCode } from "./errors";
+import { BranchShiftError, BranchShiftErrorCode } from "./errors";
 import { computeGraphLayout } from "./graphLayout";
 import type {
   BranchInfo,
@@ -944,14 +944,14 @@ export class GitService {
       .trim()
       .split(FIELD_SEP);
     if (resolvedRef !== localRef) {
-      throw new JetGitError(
-        JetGitErrorCode.BRANCH_NOT_FOUND,
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_NOT_FOUND,
         `Local branch '${branchName}' does not exist`,
       );
     }
     if (!remote || !remoteRef) {
-      throw new JetGitError(
-        JetGitErrorCode.BRANCH_NO_UPSTREAM,
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_NO_UPSTREAM,
         `Branch '${branchName}' has no configured upstream`,
       );
     }
@@ -968,8 +968,8 @@ export class GitService {
       await this.execGit(["worktree", "list", "--porcelain"]),
     ).get(localRef);
     if (checkedOutPath) {
-      throw new JetGitError(
-        JetGitErrorCode.BRANCH_CHECKED_OUT_IN_WORKTREE,
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_CHECKED_OUT_IN_WORKTREE,
         `Branch '${branchName}' is checked out in worktree '${checkedOutPath}'`,
       );
     }
@@ -979,8 +979,8 @@ export class GitService {
     } catch (error) {
       const detail = gitErrorText(error);
       if (/non-fast-forward|\[rejected\]/i.test(detail)) {
-        throw new JetGitError(
-          JetGitErrorCode.BRANCH_NON_FAST_FORWARD,
+        throw new BranchShiftError(
+          BranchShiftErrorCode.BRANCH_NON_FAST_FORWARD,
           `Branch '${branchName}' cannot be fast-forwarded from its upstream`,
         );
       }

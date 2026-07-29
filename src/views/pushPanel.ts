@@ -55,7 +55,7 @@ export class PushPanel {
     }
 
     this.panel = vscode.window.createWebviewPanel(
-      "jetgit-plus.pushPanel",
+      "branchshift.pushPanel",
       `Push Commits to ${branchName}`,
       vscode.ViewColumn.One,
       {

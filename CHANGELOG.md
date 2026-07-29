@@ -1,5 +1,27 @@
 # Changelog / 更新日志
 
+## [0.6.0] - 2026-07-29
+
+### Changed / 变更
+- **BranchShift rebrand** — renamed the public product from JetGit Plus to BranchShift, with a new original icon, Marketplace metadata, bilingual README, and migration-focused positioning: “Switch editors, not your Git workflow.” / 品牌由 JetGit Plus 全面升级为 BranchShift，采用全新原创图标、Marketplace 元数据、中英文 README，并明确“换到 VS Code，不必重学 Git 工作流”的迁移定位
+- **Complete identity reset** — package name, extension ID, commands, views, URI scheme, workspace state keys, diagnostics, and internal error types now use `branchshift` / 完整重置内部身份：包名、扩展 ID、命令、视图、URI scheme、workspace state key、诊断前缀与内部错误类型统一改为 `branchshift`
+- **Marketplace discovery** — expanded Git, SCM, JetBrains, branch comparison, file history, multi-repo, VS Code, and Cursor keywords; added Visualization category and gallery metadata / 扩充 Git、SCM、JetBrains、分支比较、文件历史、多仓库、VS Code 与 Cursor 搜索关键词，并增加 Visualization 分类和展示页配置
+- **Package hygiene** — development metadata, SDD artifacts, local IDE files, ROADMAP, and previously built VSIX files are excluded from release packages / 发布包不再包含本地 IDE、SDD、开发说明、ROADMAP 与旧 VSIX 等无关文件
+
+### Breaking / 破坏性变更
+- The extension ID changes from `strNewBee.jetgit-plus` to `strNewBee.branchshift`. Existing JetGit Plus workspace state is intentionally not migrated; uninstall the old development VSIX before installing BranchShift / 扩展 ID 从 `strNewBee.jetgit-plus` 改为 `strNewBee.branchshift`。旧 JetGit Plus workspace state 不做迁移；安装 BranchShift 前请卸载旧开发版 VSIX
+
+## [0.5.3] - 2026-07-20
+
+### Changed / 变更
+- **Commit-state styling** — selected, hovered, and current-branch-highlighted commit rows now remain visually distinct, including a visible selection outline / 提交列表中的选中、悬浮与当前分支高亮状态保持清晰区分，并恢复选中边框
+- **Changed Files tree polish** — added directory chevrons, whole-row expand/collapse, consistent file highlighting, and corrected nested indentation / Changed Files 增加目录箭头与整行展开折叠，统一文件高亮并修复多层目录缩进
+- **Commit metadata alignment** — ref, author, date, and hash columns share a stable grid and remain aligned across highlighted rows / Ref、Author、Date 与 Hash 使用稳定网格布局，在高亮行中保持一致对齐
+
+### Fixed / 修复
+- **Commit panel file selection** — double-clicking a changed file no longer leaves browser word selection in place / Commit 面板双击变更文件不再残留浏览器单词选择效果
+- **Ordinary log hover visibility** — non-highlighted and current-branch-highlighted rows now both provide a visible hover state / 普通行与当前分支高亮行均拥有清晰可见的悬浮状态
+
 ## [0.5.2] - 2026-07-18
 
 ### Added / 新增

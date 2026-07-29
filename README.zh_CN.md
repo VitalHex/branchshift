@@ -2,13 +2,13 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/assets/logo-128.png" width="80" />
+<img src="https://raw.githubusercontent.com/strNewBee/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift 图标" />
 
-<h1>JetGit Plus - IDEA 风格 Git 图与提交</h1>
+<h1>BranchShift</h1>
 
-JetGit Plus 为 VS Code 与 Cursor 带来 IntelliJ IDEA 风格的 Git 工作流：提交图、分支管理、Cherry-Pick、Rebase、三路合并编辑器与丰富的右键菜单。
+**换到 VS Code，不必重学 Git 工作流。**
 
-> 基于 [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git) 的 Fork，新增完整的 IntelliJ IDEA 风格右键菜单和 UI 增强。
+为熟悉 JetBrains Git 工作流、正在迁移到 **VS Code** 或 **Cursor** 的开发者打造。
 
 [English](./README.md) · **简体中文**
 
@@ -16,133 +16,111 @@ JetGit Plus 为 VS Code 与 Cursor 带来 IntelliJ IDEA 风格的 Git 工作流�
 
 ---
 
-## 功能特性
+BranchShift 将你在 JetBrains IDE 中已经熟悉的 Git 使用习惯带到新编辑器：可视化分支树、紧凑提交图、独立 Commit 工具窗口、Shelf 与 Stash、分支比较、历史改写、Merge 与冲突处理。更换编辑器之后，不需要从头适应另一套工作流。
 
-### 分支右键菜单
+> BranchShift 是独立开源项目，与 JetBrains、Microsoft、GitHub 或 Cursor 不存在隶属、赞助或官方合作关系。
 
-右键任意分支即可执行 Checkout、创建、合并、Rebase、重命名、删除、Push、Pull 等操作，与 IntelliJ IDEA 体验一致。
+> 本项目 Fork 自 [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git)。原仓库及其贡献者信息完整保留在[项目沿革](#项目沿革)中。
 
-![分支 Checkout](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/checkout.gif)
+## 熟悉的工作流，新的编辑器
 
-### 提交右键菜单
+| JetBrains 中的习惯 | BranchShift 在 VS Code 中的对应能力 |
+| --- | --- |
+| Commit 工具窗口 | 独立 Commit 侧栏，支持部分提交、Amend、Commit & Push、Shelf 与 Stash |
+| Git Log | 分支树、紧凑提交图、Refs、过滤器、Changed Files 与提交详情 |
+| Compare with Current | 独立双向比较标签页，两侧分别拥有完整过滤器 |
+| 分支操作 | Checkout、Update、Push、Merge、Rebase、Rename、Delete、Favorite 等 |
+| 合并冲突 | 冲突面板与带语法高亮的三路合并编辑器 |
+| 多仓库项目 | Multi-root workspace 下 Commit 与 Git Log 共享同一活动仓库 |
 
-右键任意提交即可复制 Hash、Cherry-Pick、Checkout、Reset、Revert、创建分支或标签。
+## 核心能力
 
-![提交右键菜单](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/commit-context-menu.gif)
+### Git Log 与分支管理
 
-### 变更文件右键菜单
+- 可搜索的本地分支、远程分支与 Tag 树
+- 收藏、ahead/behind 指示与基于 upstream 的安全 Update
+- 彩色提交图，可调整或隐藏提交信息列
+- 按分支、作者、日期和文件历史过滤
+- 普通日志与比较日志复用同一套提交右键操作
 
-右键变更文件面板中的文件：查看 Diff、编辑源文件、打开仓库版本、还原/Cherry-Pick 文件变更、复制路径。
+![Git Log](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/git-graph.png)
 
-### Git 提交图
+### Commit、Shelf 与 Stash
 
-![Git Graph](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/git-graph.png)
+- 按文件勾选，支持部分提交
+- Commit、Commit and Push 与 Amend
+- 目录分组、多选、Rollback 和 Diff 文件导航
+- 使用 `.idea/shelf/` 保存与 JetBrains 兼容的 Shelf 数据
+- 原生 Git Stash 管理
 
-- **分支树** — 按 Local / Remote / Tags 分组，支持搜索过滤
-- **提交列表** — 彩色分支线，可调整列宽（Message、Author、Date、Hash）
-- **详情面板** — 提交信息和变更文件树
-- **过滤器** — 按分支、作者、日期范围过滤
+### 分支比较
 
-### 三路合并编辑器
+将本地分支、远程分支或 Tag 与当前分支比较。BranchShift 会打开独立编辑器标签页，分别展示两侧独有提交，并提供独立过滤器、Changed Files 和提交详情。
 
-![三路合并编辑器](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/three-way-merge.png)
+### 符合直觉的右键菜单
 
-- 三栏布局：Theirs | Result | Yours
-- 冲突高亮 + 逐块操作按钮
-- 完整语法高亮
+在分支、提交与变更文件上右键，即可执行 Checkout、Cherry-Pick、Reset、Revert、Merge、Rebase、Diff、文件历史和源码跳转等与仓库绑定的操作。
 
-### 冲突管理
+![分支右键菜单](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/checkout.gif)
 
-![冲突列表](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/conflicts-list.png)
+![提交右键菜单](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/commit-context-menu.gif)
 
-- 快捷操作：接受 Yours / 接受 Theirs / 合并
-- 与 VS Code 源代码管理面板无缝集成
+### 冲突处理与三路合并
 
----
+- 独立冲突列表，支持 Accept Yours、Accept Theirs 与 Merge
+- Theirs / Result / Yours 三栏编辑器
+- 逐冲突块操作与语法高亮
+- 与 VS Code 内置 Source Control 面板集成
 
-## 所有右键菜单操作
+![三路合并编辑器](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/three-way-merge.png)
 
-<details>
-<summary><b>分支（右键）</b></summary>
+![冲突列表](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/conflicts-list.png)
 
-- Checkout — 切换分支
-- New Branch from... — 从选中分支创建新分支
-- Checkout and Rebase onto current — 切换并 Rebase 到当前分支
-- Rebase current onto branch — 将当前分支 Rebase 到选中分支
-- Merge into current — 合并到当前分支
-- Rename — 重命名（仅本地分支）
-- Delete — 删除（未合并时提示强制删除）
-- Update — 拉取远程更新
-- Push — 推送到远程
+### Multi-root workspace
 
-</details>
-
-<details>
-<summary><b>提交（右键）</b></summary>
-
-- Copy Revision Number — 复制完整 Hash
-- Cherry-Pick — Cherry-Pick 该提交
-- Checkout Revision — 切换到该提交（Detached HEAD）
-- Reset Current Branch to Here — 重置当前分支（Mixed/Soft/Hard）
-- Revert Commit — 创建 Revert 提交
-- New Branch... — 从该提交创建分支
-- New Tag... — 在该提交创建标签
-
-</details>
-
-<details>
-<summary><b>变更文件（右键）</b></summary>
-
-- Show Diff — 打开 Diff 编辑器
-- Edit Source — 在编辑器中打开文件
-- Open Repository Version — 查看该提交时的文件版本
-- Revert Selected Changes — 还原文件到父提交状态
-- Cherry-Pick Selected Changes — 将文件变更应用到工作区
-- Copy Path — 复制文件路径
-- Copy File Name — 复制文件名
-
-</details>
-
----
+BranchShift 当前从每个 workspace folder 发现一个 Git 仓库，并在 Commit 与 Git Log 中提供共享的活动仓库选择器。单个顶层文件夹内部存在多个嵌套 Git 仓库的场景将在后续版本中支持。
 
 ## 安装
 
-**从 Marketplace 安装：**
+> 如果你安装过 JetGit Plus 开发版 VSIX，请先卸载 `strNewBee.jetgit-plus`。BranchShift 使用新的扩展 ID `strNewBee.branchshift`，VS Code 会将两者视为不同扩展。
 
-在 VS Code 扩展中搜索 **"JetGit Plus"** 即可安装。
+### VS Code Marketplace
 
-**从 .vsix 安装：**
+在扩展面板中搜索 **BranchShift** 或 **Git**。
 
-1. 从 [Releases](https://github.com/strNewBee/jetgit-plus/releases) 下载最新 `.vsix`
-2. `Cmd+Shift+P` → "Extensions: Install from VSIX..."
+### VSIX
+
+1. 从 [Releases](https://github.com/strNewBee/branchshift/releases) 下载最新 `.vsix`。
+2. 在命令面板运行 **Extensions: Install from VSIX...**。
 
 ## 环境要求
 
-- VS Code 1.85.0+
-- Git 已安装并在 PATH 中
+- VS Code 1.85.0 或更高版本
+- Git 已安装并可以通过 `PATH` 调用
 
 ## 本地开发
 
 ```bash
-git clone https://github.com/strNewBee/jetgit-plus.git
-cd jetgit-plus
+git clone https://github.com/strNewBee/branchshift.git
+cd branchshift
 pnpm install
 cd webview && pnpm install && cd ..
 ```
 
-按 **F5** 启动扩展开发宿主。
+按 **F5** 启动 Extension Development Host。
 
 ```bash
-pnpm run watch          # 监听模式
-pnpm run build          # 生产构建
-pnpm run vsce:package   # 打包为 .vsix
+pnpm run watch          # 开发监听模式
+pnpm run build          # 构建 Extension Host 与 Webview
+pnpm run vsce:package   # 生成 VSIX 安装包
 ```
 
-## 致谢
+## 项目沿革
 
-- 原项目：[zhyc9de/jet-git](https://github.com/zhyc9de/jet-git)
-- 图标：[IntelliJ IDEA Icons](https://intellij-icons.jetbrains.design/)（Apache 2.0 许可）
+BranchShift Fork 自 [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git)，并保留原项目的 Git Graph 与合并能力基础。本 Fork 后续增加了 JetBrains 风格的 Commit/Shelf/Stash 工作流、丰富的右键操作、分支比较、Multi-root 多仓库支持以及独立品牌。
+
+部分界面图标来自 [IntelliJ Platform Icons](https://intellij-icons.jetbrains.design/)，遵循 Apache 2.0 许可证。BranchShift 应用图标为本项目原创资产。
 
 ## 许可证
 
-[MIT](./LICENSE)
+BranchShift 继续使用 [MIT License](./LICENSE)。原有版权与归属信息保留在许可证文件和项目历史中。

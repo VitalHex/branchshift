@@ -1,194 +1,212 @@
 {
-  "name": "jetgit-plus",
-  "displayName": "JetGit Plus - IDEA-style Git Graph & Commit for VS Code",
+  "name": "branchshift",
+  "displayName": "BranchShift — JetBrains-style Git for VS Code",
   "publisher": "strNewBee",
-  "description": "JetGit Plus brings an IntelliJ IDEA-style Git workflow to VS Code and Cursor: git graph visualization, IDEA-style commit panel with shelve/stash, branch management, cherry-pick, rebase, merge, 3-way merge editor, and rich context menus.",
-  "version": "0.5.3",
+  "description": "Keep your JetBrains-style Git workflow in VS Code and Cursor with Git graph, commit and shelf tools, branch comparison, rebase, merge, conflicts, and multi-repo support.",
+  "version": "0.6.0",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/strNewBee/jetgit-plus"
+    "url": "https://github.com/strNewBee/branchshift"
+  },
+  "homepage": "https://github.com/strNewBee/branchshift#readme",
+  "bugs": {
+    "url": "https://github.com/strNewBee/branchshift/issues"
+  },
+  "galleryBanner": {
+    "color": "#08172D",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
     "SCM Providers",
+    "Visualization",
     "Other"
   ],
   "keywords": [
     "git",
-    "intellij",
-    "jetbrains",
-    "idea",
     "git graph",
+    "git log",
+    "git history",
+    "git workflow",
+    "source control",
+    "scm",
     "commit",
-    "shelf",
-    "stash",
     "branch",
     "merge",
-    "cherry-pick",
     "rebase",
-    "git log",
-    "context menu",
+    "cherry-pick",
+    "stash",
+    "shelf",
     "diff",
-    "3-way merge",
+    "conflict resolution",
+    "multi-repo",
+    "multi-root workspace",
+    "branch compare",
+    "file history",
+    "jetbrains",
+    "intellij",
+    "idea",
     "webstorm",
     "pycharm",
     "goland",
-    "rider"
+    "rider",
+    "cursor",
+    "vscode"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "panel": [
         {
-          "id": "jetgit-plus-panel",
-          "title": "JetGit",
+          "id": "branchshift-panel",
+          "title": "BranchShift",
           "icon": "$(git-branch)"
         }
       ],
       "activitybar": [
         {
-          "id": "jetgit-plus-commit",
+          "id": "branchshift-commit",
           "title": "Commit",
           "icon": "images/commit-icon.svg"
         }
       ]
     },
     "views": {
-      "jetgit-plus-panel": [
+      "branchshift-panel": [
         {
           "type": "webview",
-          "id": "jetgit-plus.gitLog",
+          "id": "branchshift.gitLog",
           "name": "Git Log"
         }
       ],
-      "jetgit-plus-commit": [
+      "branchshift-commit": [
         {
           "type": "webview",
-          "id": "jetgit-plus.commitPanel",
+          "id": "branchshift.commitPanel",
           "name": "Commit"
         }
       ]
     },
     "commands": [
       {
-        "command": "jetgit-plus.refreshLog",
+        "command": "branchshift.refreshLog",
         "title": "Refresh Git Log",
         "icon": "$(refresh)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.openMergeEditor",
+        "command": "branchshift.openMergeEditor",
         "title": "Open Merge Editor",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.openConflicts",
+        "command": "branchshift.openConflicts",
         "title": "Conflicts",
         "icon": "$(git-merge)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.openMergeEditorFromSCM",
-        "title": "Open in JetGit Merge Editor",
+        "command": "branchshift.openMergeEditorFromSCM",
+        "title": "Open in BranchShift Merge Editor",
         "icon": "$(git-merge)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.showFileHistory",
-        "title": "(JetGit) Show File History",
+        "command": "branchshift.showFileHistory",
+        "title": "(BranchShift) Show File History",
         "icon": "$(history)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.nextDiff",
+        "command": "branchshift.nextDiff",
         "title": "Next File Diff",
         "icon": "$(arrow-down)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.prevDiff",
+        "command": "branchshift.prevDiff",
         "title": "Previous File Diff",
         "icon": "$(arrow-up)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.commitPanel.refresh",
+        "command": "branchshift.commitPanel.refresh",
         "title": "Refresh Changes",
         "icon": "$(refresh)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.commitPanel.commit",
+        "command": "branchshift.commitPanel.commit",
         "title": "Commit",
         "icon": "$(check)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.commitPanel.commitAndPush",
+        "command": "branchshift.commitPanel.commitAndPush",
         "title": "Commit and Push",
         "icon": "$(cloud-upload)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.commitPanel.shelve",
+        "command": "branchshift.commitPanel.shelve",
         "title": "Shelve Changes",
         "icon": "$(archive)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.commitPanel.unshelve",
+        "command": "branchshift.commitPanel.unshelve",
         "title": "Unshelve Changes",
         "icon": "$(package)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.openPushPanel",
+        "command": "branchshift.openPushPanel",
         "title": "Push...",
         "icon": "$(cloud-upload)",
-        "category": "JetGit"
+        "category": "BranchShift"
       },
       {
-        "command": "jetgit-plus.editSource",
-        "title": "(JetGit) Edit Source",
+        "command": "branchshift.editSource",
+        "title": "(BranchShift) Edit Source",
         "icon": "$(go-to-file)",
-        "category": "JetGit"
+        "category": "BranchShift"
       }
     ],
     "menus": {
       "view/title": [],
       "scm/title": [
         {
-          "command": "jetgit-plus.openConflicts",
+          "command": "branchshift.openConflicts",
           "when": "scmProvider == git",
           "group": "navigation"
         }
       ],
       "scm/resourceState/context": [
         {
-          "command": "jetgit-plus.openMergeEditorFromSCM",
+          "command": "branchshift.openMergeEditorFromSCM",
           "when": "scmProvider == git && scmResourceGroup == merge",
           "group": "inline@10"
         }
       ],
       "editor/context": [
         {
-          "command": "jetgit-plus.showFileHistory",
+          "command": "branchshift.showFileHistory",
           "when": "editorTextFocus",
           "group": "git@1"
         },
         {
-          "command": "jetgit-plus.editSource",
+          "command": "branchshift.editSource",
           "when": "isInDiffEditor && resourceScheme != file",
           "group": "git@2"
         }
       ],
       "explorer/context": [
         {
-          "command": "jetgit-plus.showFileHistory",
+          "command": "branchshift.showFileHistory",
           "when": "!explorerResourceIsFolder",
           "group": "git@1"
         }
@@ -196,18 +214,18 @@
     },
     "keybindings": [
       {
-        "command": "jetgit-plus.openPushPanel",
+        "command": "branchshift.openPushPanel",
         "key": "ctrl+shift+k",
         "mac": "cmd+shift+k"
       },
       {
-        "command": "jetgit-plus.nextDiff",
+        "command": "branchshift.nextDiff",
         "key": "ctrl+f7",
         "mac": "cmd+f7",
         "when": "editorFocus"
       },
       {
-        "command": "jetgit-plus.prevDiff",
+        "command": "branchshift.prevDiff",
         "key": "ctrl+shift+f7",
         "mac": "cmd+shift+f7",
         "when": "editorFocus"

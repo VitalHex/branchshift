@@ -2,13 +2,13 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/assets/logo-128.png" width="80" />
+<img src="https://raw.githubusercontent.com/strNewBee/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift icon" />
 
-<h1>JetGit Plus - IDEA-style Git Graph & Commit for VS Code</h1>
+<h1>BranchShift</h1>
 
-**JetGit Plus** brings an IntelliJ **IDEA-style** Git workflow to **VS Code** and **Cursor**. Includes Git graph visualization, IDEA-style commit panel with shelf and stash, branch management with context menus, cherry-pick, rebase, merge, and 3-way merge editor.
+**Switch editors, not your Git workflow.**
 
-> Fork of [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git) with full IntelliJ IDEA-style context menus and UI enhancements.
+A JetBrains-style Git workflow for developers moving to **VS Code** or **Cursor**.
 
 **English** · [简体中文](./README.zh_CN.md)
 
@@ -16,133 +16,111 @@
 
 ---
 
-## Features
+BranchShift keeps the Git habits you already know from JetBrains IDEs: a visual branch tree, compact commit graph, dedicated Commit tool window, Shelf and Stash, branch comparison, history rewriting, merge tools, and conflict resolution—without forcing you to relearn your workflow after changing editors.
 
-### Branch Context Menu
+> BranchShift is an independent open-source project and is not affiliated with or endorsed by JetBrains, Microsoft, GitHub, or Cursor.
 
-Right-click any branch to checkout, create, merge, rebase, rename, delete, push, or pull — just like IntelliJ IDEA.
+> This project is a fork of [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git). The original repository and its contributors remain credited under [Project lineage](#project-lineage).
 
-![Branch Checkout](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/checkout.gif)
+## Familiar workflow, new editor
 
-### Commit Context Menu
+| JetBrains workflow | BranchShift in VS Code |
+| --- | --- |
+| Commit tool window | Dedicated Commit activity with partial commits, Amend, Commit & Push, Shelf, and Stash |
+| Git Log | Branch tree, compact graph, refs, filters, changed files, and commit details |
+| Compare with Current | Independent bidirectional comparison tabs with per-side filters |
+| Branch actions | Checkout, Update, Push, Merge, Rebase, Rename, Delete, Favorite, and more |
+| Merge conflicts | Conflict dashboard and syntax-highlighted 3-way merge editor |
+| Multi-repository project | One active repository shared by Commit and Git Log across multi-root workspaces |
 
-Right-click any commit to copy hash, cherry-pick, checkout revision, reset, revert, create branch or tag.
+## Highlights
 
-![Commit Context Menu](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/commit-context-menu.gif)
+### Git Log and branch management
 
-### Changed Files Context Menu
+- Local branches, remotes, and tags in a searchable tree
+- Favorites, ahead/behind indicators, and upstream-aware Update
+- Color-coded commit graph with resizable and hideable columns
+- Branch, author, date, and file-history filters
+- Shared commit context actions across normal and comparison logs
 
-Right-click files in the Changed Files panel: show diff, edit source, open repository version, revert/cherry-pick file changes, copy path.
+![Git Log](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/git-graph.png)
 
-### Git Graph
+### Commit, Shelf, and Stash
 
-![Git Graph](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/git-graph.png)
+- Select individual files for partial commits
+- Commit, Commit and Push, and Amend workflows
+- Directory grouping, multi-selection, rollback, and diff navigation
+- JetBrains-compatible Shelf data stored under `.idea/shelf/`
+- Native Git stash management
 
-- **Branch Tree** — branches organized by Local / Remote / Tags with search filter
-- **Commit List** — color-coded branch lines, resizable columns (Message, Author, Date, Hash)
-- **Detail Panel** — commit message and changed file tree
-- **Filters** — filter by Branch, User, Date range
+### Branch comparison
 
-### 3-Way Merge Editor
+Compare a local branch, remote branch, or tag with the current branch. BranchShift opens a dedicated editor tab with commits unique to each side, independent filters, changed files, and commit details.
 
-![3-Way Merge Editor](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/three-way-merge.png)
+### Context menus where you expect them
 
-- Three-column layout: Theirs | Result | Yours
-- Conflict highlighting with per-block action buttons
-- Full syntax highlighting
+Right-click branches, commits, and changed files to access checkout, cherry-pick, reset, revert, merge, rebase, diff, history, source navigation, and other repository-bound actions.
 
-### Conflict Management
+![Branch context menu](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/checkout.gif)
 
-![Conflict List](https://raw.githubusercontent.com/strNewBee/jetgit-plus/main/images/conflicts-list.png)
+![Commit context menu](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/commit-context-menu.gif)
 
-- Quick actions: Accept Yours / Accept Theirs / Merge
-- Integration with VS Code Source Control panel
+### Conflicts and 3-way merge
 
----
+- Dedicated conflict list with Accept Yours, Accept Theirs, and Merge actions
+- Three-column Theirs / Result / Yours editor
+- Per-conflict actions and syntax highlighting
+- Integration with the built-in VS Code Source Control view
 
-## All Context Menu Actions
+![3-way merge editor](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/three-way-merge.png)
 
-<details>
-<summary><b>Branch (right-click)</b></summary>
+![Conflict list](https://raw.githubusercontent.com/strNewBee/branchshift/main/images/conflicts-list.png)
 
-- Checkout
-- New Branch from...
-- Checkout and Rebase onto current
-- Rebase current onto branch
-- Merge into current
-- Rename (local only)
-- Delete (with force-delete fallback)
-- Update (pull)
-- Push
+### Multi-root workspace support
 
-</details>
-
-<details>
-<summary><b>Commit (right-click)</b></summary>
-
-- Copy Revision Number
-- Cherry-Pick
-- Checkout Revision
-- Reset Current Branch to Here (Mixed/Soft/Hard)
-- Revert Commit
-- New Branch...
-- New Tag...
-
-</details>
-
-<details>
-<summary><b>Changed Files (right-click)</b></summary>
-
-- Show Diff
-- Edit Source
-- Open Repository Version
-- Revert Selected Changes
-- Cherry-Pick Selected Changes
-- Copy Path
-- Copy File Name
-
-</details>
-
----
+BranchShift discovers one Git repository per workspace folder and exposes a shared active-repository selector in both Commit and Git Log. Nested repositories inside a single workspace folder are intentionally deferred to a later release.
 
 ## Installation
 
-**From Marketplace:**
+> Upgrading from a JetGit Plus development VSIX? Uninstall `strNewBee.jetgit-plus` first. BranchShift intentionally uses the new extension ID `strNewBee.branchshift`, so VS Code treats it as a separate extension.
 
-Search for **"JetGit Plus"** in VS Code Extensions.
+### VS Code Marketplace
 
-**From .vsix:**
+Search for **BranchShift** or **Git** in the Extensions view.
 
-1. Download the latest `.vsix` from [releases](https://github.com/strNewBee/jetgit-plus/releases)
-2. `Cmd+Shift+P` → "Extensions: Install from VSIX..."
+### VSIX
+
+1. Download the latest `.vsix` from [Releases](https://github.com/strNewBee/branchshift/releases).
+2. Run **Extensions: Install from VSIX...** from the Command Palette.
 
 ## Requirements
 
-- VS Code 1.85.0+
-- Git installed and in PATH
+- VS Code 1.85.0 or later
+- Git available on `PATH`
 
-## Local Development
+## Local development
 
 ```bash
-git clone https://github.com/strNewBee/jetgit-plus.git
-cd jetgit-plus
+git clone https://github.com/strNewBee/branchshift.git
+cd branchshift
 pnpm install
 cd webview && pnpm install && cd ..
 ```
 
-Press **F5** to launch Extension Development Host.
+Press **F5** to launch the Extension Development Host.
 
 ```bash
-pnpm run watch          # Watch mode
-pnpm run build          # Production build
-pnpm run vsce:package   # Package as .vsix
+pnpm run watch          # Development watch mode
+pnpm run build          # Extension host + webview production build
+pnpm run vsce:package   # Build a VSIX package
 ```
 
-## Credits
+## Project lineage
 
-- Original: [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git)
-- Icons: [IntelliJ IDEA Icons](https://intellij-icons.jetbrains.design/) (Apache 2.0)
+BranchShift began as a fork of [zhyc9de/jet-git](https://github.com/zhyc9de/jet-git) and retains the original project's Git graph and merge foundations. This fork has since added the JetBrains-style Commit/Shelf/Stash workflow, extensive context actions, branch comparison, multi-root repository support, and independent branding.
+
+Some interface icons are derived from [IntelliJ Platform Icons](https://intellij-icons.jetbrains.design/) under the Apache 2.0 license. The BranchShift application icon is an original project asset.
 
 ## License
 
-[MIT](./LICENSE)
+BranchShift remains available under the [MIT License](./LICENSE). Copyright and attribution notices are preserved in the license file and project history.

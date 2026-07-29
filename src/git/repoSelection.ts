@@ -183,7 +183,7 @@ export async function persistAndBroadcastActive(
     // Without this catch a persist throw would skip the broadcast, leaving the
     // UI tracking a stale active repo while the in-memory registry moved on.
     console.error(
-      "[jetgit-plus] persist activeRepoId failed:",
+      "[branchshift] persist activeRepoId failed:",
       err instanceof Error ? (err.stack ?? err) : err,
     );
   }
@@ -351,7 +351,7 @@ export class FolderReconciler {
           // update. Instead: if a pending exists, re-discover it (latest wins);
           // only bail when the scan failed AND nothing newer arrived.
           console.error(
-            "[jetgit-plus] folder discovery failed:",
+            "[branchshift] folder discovery failed:",
             err instanceof Error ? (err.stack ?? err) : err,
           );
           if (this.pendingFolders !== null) {
@@ -388,7 +388,7 @@ export class FolderReconciler {
           // did arrive during it, the latest folders would still be re-discovered
           // rather than dropped — the same guarantee the discovery catch gives.
           console.error(
-            "[jetgit-plus] folder apply failed:",
+            "[branchshift] folder apply failed:",
             err instanceof Error ? (err.stack ?? err) : err,
           );
           if (this.pendingFolders !== null) {
@@ -429,7 +429,7 @@ export class FolderReconciler {
         await this.onSettled?.();
       } catch (err) {
         console.error(
-          "[jetgit-plus] folder reconcile onSettled failed:",
+          "[branchshift] folder reconcile onSettled failed:",
           err instanceof Error ? (err.stack ?? err) : err,
         );
       }

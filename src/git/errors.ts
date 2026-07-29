@@ -1,4 +1,4 @@
-export const JetGitErrorCode = {
+export const BranchShiftErrorCode = {
   REPO_NOT_FOUND: "REPO_NOT_FOUND",
   INVALID_REF: "INVALID_REF",
   BRANCH_NOT_FOUND: "BRANCH_NOT_FOUND",
@@ -7,15 +7,15 @@ export const JetGitErrorCode = {
   BRANCH_NON_FAST_FORWARD: "BRANCH_NON_FAST_FORWARD",
 } as const;
 
-export type JetGitErrorCode =
-  (typeof JetGitErrorCode)[keyof typeof JetGitErrorCode];
+export type BranchShiftErrorCode =
+  (typeof BranchShiftErrorCode)[keyof typeof BranchShiftErrorCode];
 
-export class JetGitError extends Error {
+export class BranchShiftError extends Error {
   constructor(
-    readonly code: JetGitErrorCode,
+    readonly code: BranchShiftErrorCode,
     message: string,
   ) {
     super(message);
-    this.name = "JetGitError";
+    this.name = "BranchShiftError";
   }
 }

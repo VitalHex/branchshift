@@ -6,7 +6,7 @@ import * as ts from "typescript";
 /**
  * Fix-6 (finding F7): structural URI guard.
  *
- * Every functional `jetgit-plus:/` URI constructed in the host sources must
+ * Every functional `branchshift:/` URI constructed in the host sources must
  * carry `?repo=<repoId>`. Without it, GitContentProvider / editSource fall back
  * to the *active* repo, so after a multi-repo switch a bare URI silently
  * resolves against the wrong repository (this is exactly the shelf-diff bug
@@ -20,28 +20,28 @@ import * as ts from "typescript";
  * literal compiles and runs fine but resolves to the wrong repo.
  *
  * Coverage / marker scope:
- * - The marker `${JETGIT_PLUS_SCHEME}:/` matches URI *string construction* —
+ * - The marker `${BRANCHSHIFT_SCHEME}:/` matches URI *string construction* —
  *   the `:/` separator immediately follows the scheme constant. This is the
  *   only construction form in use today, and the form the sanctioned builder
  *   (`buildGitContentUri` in src/views/gitUri.ts) emits.
- * - Provider registrations (`registerTextDocumentContentProvider(JETGIT_PLUS_SCHEME, …)`,
- *   `registerFileSystemProvider(JETGIT_PLUS_SCHEME, …)`) pass the scheme as a
+ * - Provider registrations (`registerTextDocumentContentProvider(BRANCHSHIFT_SCHEME, …)`,
+ *   `registerFileSystemProvider(BRANCHSHIFT_SCHEME, …)`) pass the scheme as a
  *   bare arg with no `:/`, so they are correctly NOT matched.
- * - Comments/docstrings that mention the literal `jetgit-plus:/` do not use the
- *   `${JETGIT_PLUS_SCHEME}:/` template marker, so they are also excluded.
+ * - Comments/docstrings that mention the literal `branchshift:/` do not use the
+ *   `${BRANCHSHIFT_SCHEME}:/` template marker, so they are also excluded.
  * - A separate TypeScript-AST pass below catches direct `Uri.parse` and
- *   `Uri.from` calls that reference the JetGit scheme and requires them to live
+ *   `Uri.from` calls that reference the BranchShift scheme and requires them to live
  *   in gitUri.ts. If a future implementation uses another URI-construction
  *   API, extend collectDirectUriConstructions so this remains exhaustive.
  */
 
 /**
- * Marker for a constructed jetgit-plus:/ URI (scheme + path separator).
+ * Marker for a constructed branchshift:/ URI (scheme + path separator).
  * This is the *literal* source text we grep for — it must not be a real
  * template literal, so the curly braces are intentional.
  */
 // biome-ignore lint/suspicious/noTemplateCurlyInString: literal source substring being grepped, not a template
-const URI_MARKER = "${JETGIT_PLUS_SCHEME}:/";
+const URI_MARKER = "${BRANCHSHIFT_SCHEME}:/";
 
 /**
  * Enumerate every host TypeScript source under src/, excluding src/test/**
@@ -65,7 +65,7 @@ function readLines(rel: string): string[] {
   return fs.readFileSync(abs, "utf8").split(/\r?\n/);
 }
 
-/** Lines that construct a jetgit-plus:/ URI (across all host sources). */
+/** Lines that construct a branchshift:/ URI (across all host sources). */
 function collectUriLines(): { file: string; line: string }[] {
   const out: { file: string; line: string }[] = [];
   for (const rel of listHostTsFiles()) {
@@ -86,8 +86,8 @@ interface DirectUriConstruction {
 
 /**
  * Find direct vscode.Uri.parse/Uri.from constructions whose arguments mention
- * the JetGit content scheme. Unlike URI_MARKER, this also catches component
- * construction such as `vscode.Uri.from({ scheme: JETGIT_PLUS_SCHEME, ... })`.
+ * the BranchShift content scheme. Unlike URI_MARKER, this also catches component
+ * construction such as `vscode.Uri.from({ scheme: BRANCHSHIFT_SCHEME, ... })`.
  */
 function collectDirectUriConstructions(): DirectUriConstruction[] {
   const out: DirectUriConstruction[] = [];
@@ -113,8 +113,8 @@ function collectDirectUriConstructions(): DirectUriConstruction[] {
           .map((argument) => argument.getText(sourceFile))
           .join(", ");
         if (
-          args.includes("JETGIT_PLUS_SCHEME") ||
-          args.includes("jetgit-plus:")
+          args.includes("BRANCHSHIFT_SCHEME") ||
+          args.includes("branchshift:")
         ) {
           const { line } = sourceFile.getLineAndCharacterOfPosition(
             node.getStart(sourceFile),
@@ -133,32 +133,32 @@ function collectDirectUriConstructions(): DirectUriConstruction[] {
   return out;
 }
 
-describe("Fix-6 URI audit — every jetgit-plus:/ URI carries repo=", () => {
-  it("the host sources actually construct jetgit-plus:/ URIs (guard is non-vacuous)", () => {
+describe("Fix-6 URI audit — every branchshift:/ URI carries repo=", () => {
+  it("the host sources actually construct branchshift:/ URIs (guard is non-vacuous)", () => {
     const uriLines = collectUriLines();
     assert.ok(
       uriLines.length > 0,
       // biome-ignore lint/suspicious/noTemplateCurlyInString: literal substring in message, not a template
-      "URI audit is vacuous — expected at least one `${JETGIT_PLUS_SCHEME}:/` " +
+      "URI audit is vacuous — expected at least one `${BRANCHSHIFT_SCHEME}:/` " +
         "construction across all host TypeScript sources under src/ (excluding " +
         "tests). Did the construction pattern change? Update URI_MARKER so this " +
         "guard keeps meaning something.",
     );
   });
 
-  it("every constructed jetgit-plus:/ URI line contains repo=", () => {
+  it("every constructed branchshift:/ URI line contains repo=", () => {
     const uriLines = collectUriLines();
     const offenders = uriLines.filter((entry) => !entry.line.includes("repo="));
     assert.strictEqual(
       offenders.length,
       0,
-      "Found jetgit-plus:/ URI(s) without `repo=` — these resolve against the " +
+      "Found branchshift:/ URI(s) without `repo=` — these resolve against the " +
         "active repo and break after a multi-repo switch:\n" +
         offenders.map((o) => `  ${o.file}: ${o.line.trim()}`).join("\n"),
     );
   });
 
-  it("centralizes every direct JetGit content URI construction in gitUri.ts", () => {
+  it("centralizes every direct BranchShift content URI construction in gitUri.ts", () => {
     const builderFile = path.normalize("src/views/gitUri.ts");
     const offenders = collectDirectUriConstructions().filter(
       (entry) => path.normalize(entry.file) !== builderFile,
@@ -166,7 +166,7 @@ describe("Fix-6 URI audit — every jetgit-plus:/ URI carries repo=", () => {
     assert.strictEqual(
       offenders.length,
       0,
-      "Construct JetGit content URIs through buildGitContentUri instead of " +
+      "Construct BranchShift content URIs through buildGitContentUri instead of " +
         "calling Uri.parse/Uri.from directly:\n" +
         offenders
           .map(

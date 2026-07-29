@@ -1,34 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#7A3FD4"></stop>
-      <stop offset="100%" stop-color="#3D1670"></stop>
+    <radialGradient id="background" cx="50%" cy="42%" r="74%">
+      <stop offset="0%" stop-color="#102746"/>
+      <stop offset="100%" stop-color="#061326"/>
+    </radialGradient>
+    <linearGradient id="warmPath" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8247FF"/>
+      <stop offset="58%" stop-color="#DF56A4"/>
+      <stop offset="100%" stop-color="#FF675A"/>
     </linearGradient>
-    <linearGradient id="tr" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FE315D"></stop>
-      <stop offset="100%" stop-color="#FF9128"></stop>
+    <linearGradient id="coolPath" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#12D8CF"/>
+      <stop offset="100%" stop-color="#13BFF4"/>
     </linearGradient>
-    <linearGradient id="br" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#E40075"></stop>
-      <stop offset="100%" stop-color="#FCEE39"></stop>
-    </linearGradient>
-    <clipPath id="clip">
-      <rect x="0" y="0" width="1024" height="1024" rx="225.28" ry="225.28"></rect>
+    <clipPath id="iconShape">
+      <rect width="1024" height="1024" rx="190"/>
     </clipPath>
   </defs>
-  <g clip-path="url(#clip)">
-    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"></rect>
-    <polygon points="512.00,0 1024,0 1024,563.20 430.08,573.44" fill="url(#tr)"></polygon>
-    <polygon points="1024,563.20 1024,1024 0,1024 0,839.68 430.08,573.44" fill="url(#br)"></polygon>
+
+  <g clip-path="url(#iconShape)">
+    <rect width="1024" height="1024" fill="url(#background)"/>
+    <path d="M101 0h822c56 0 101 45 101 101v822c0 56-45 101-101 101H101C45 1024 0 979 0 923V101C0 45 45 0 101 0Z" fill="none" stroke="#132B49" stroke-width="20"/>
   </g>
-  <g transform="translate(225.28, 225.28) scale(5.7344)">
-    <g fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="26" y1="14" x2="26" y2="86"></line>
-      <path d="M 26 50 Q 26 68, 50 68 L 72 68"></path>
-    </g>
-    <circle cx="26" cy="14" r="8" fill="#FFFFFF"></circle>
-    <circle cx="26" cy="50" r="8" fill="#FFFFFF"></circle>
-    <circle cx="26" cy="86" r="8" fill="#FFFFFF"></circle>
-    <circle cx="72" cy="68" r="8" fill="#FFFFFF"></circle>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M300 315h330c94 0 151 55 151 135s-57 135-151 135H510L300 375" stroke="url(#warmPath)" stroke-width="45"/>
+    <path d="M300 710h330c94 0 151-55 151-135s-57-135-151-135H530L355 615" stroke="url(#coolPath)" stroke-width="45"/>
   </g>
+
+  <path d="M616 535 700 585 616 635Z" fill="#FF675A"/>
+  <circle cx="300" cy="315" r="53" fill="#8247FF"/>
+  <circle cx="300" cy="315" r="25" fill="#0A1930"/>
+  <circle cx="300" cy="710" r="53" fill="#12D8CF"/>
+  <circle cx="300" cy="710" r="25" fill="#0A1930"/>
 </svg>

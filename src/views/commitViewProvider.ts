@@ -4,7 +4,7 @@ import type { MessageRouter } from "../messages/messageRouter";
 import { getWebviewHtml } from "./html";
 
 export class CommitViewProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = "jetgit-plus.commitPanel";
+  public static readonly viewType = "branchshift.commitPanel";
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -32,7 +32,7 @@ export class CommitViewProvider implements vscode.WebviewViewProvider {
     // First time opening: focus git log panel after a delay
     setTimeout(() => {
       if (webviewView.visible) {
-        void vscode.commands.executeCommand("jetgit-plus.gitLog.focus");
+        void vscode.commands.executeCommand("branchshift.gitLog.focus");
         const runtime = this.repoRegistry.getActive();
         runtime?.gitService.cache.invalidate();
         this.messageRouter.broadcastEvent("commitStateChanged", {
@@ -51,7 +51,7 @@ export class CommitViewProvider implements vscode.WebviewViewProvider {
       if (webviewView.visible) {
         // Small delay to ensure panels are ready
         setTimeout(() => {
-          void vscode.commands.executeCommand("jetgit-plus.gitLog.focus");
+          void vscode.commands.executeCommand("branchshift.gitLog.focus");
           // Invalidate the active repo's git cache to ensure fresh data
           const runtime = this.repoRegistry.getActive();
           runtime?.gitService.cache.invalidate();

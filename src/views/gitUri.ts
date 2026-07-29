@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { JETGIT_PLUS_SCHEME } from "./gitContentProvider";
+import { BRANCHSHIFT_SCHEME } from "./gitContentProvider";
 
 /**
- * Build a `jetgit-plus:/` content URI that resolves to a specific file
+ * Build a `branchshift:/` content URI that resolves to a specific file
  * revision inside a specific repository.
  *
  * The resulting URI carries two query params read back by GitContentProvider:
@@ -19,6 +19,6 @@ export function buildGitContentUri(
   repoId: string,
 ): vscode.Uri {
   return vscode.Uri.parse(
-    `${JETGIT_PLUS_SCHEME}:/${filePath}?ref=${encodeURIComponent(ref)}&repo=${encodeURIComponent(repoId)}`,
+    `${BRANCHSHIFT_SCHEME}:/${filePath}?ref=${encodeURIComponent(ref)}&repo=${encodeURIComponent(repoId)}`,
   );
 }

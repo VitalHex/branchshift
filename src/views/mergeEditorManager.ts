@@ -28,7 +28,7 @@ export class MergeEditorManager {
 
     const fileName = filePath.split("/").pop() ?? filePath;
     const panel = vscode.window.createWebviewPanel(
-      "jetgit-plus.mergeEditor",
+      "branchshift.mergeEditor",
       `Merge: ${fileName}`,
       vscode.ViewColumn.One,
       {

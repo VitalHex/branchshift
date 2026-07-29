@@ -1,11 +1,18 @@
 .vscode/**
 .vscode-test/**
 .claude/**
+.idea/**
+.superpowers/**
+.git/sdd/**
 out/**
 node_modules/**
 src/**
 webview/**
 docs/**
+AGENTS.md
+CLAUDE.md
+ROADMAP.md
+*.vsix
 .gitignore
 .npmrc
 .yarnrc
@@ -14,7 +21,6 @@ vsc-extension-quickstart.md
 biome.json
 pnpm-lock.yaml
 pnpm-workspace.yaml
-CLAUDE.md
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
