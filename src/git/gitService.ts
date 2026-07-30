@@ -445,6 +445,15 @@ export class GitService {
     }
   }
 
+  readFileContent(ref: string, filePath: string): Promise<Buffer> {
+    if (!ref) {
+      throw new Error("A revision is required to read file content");
+    }
+    return this.executor.buffer(["show", `${ref}:${filePath}`], {
+      maxBuffer: MAX_BUFFER,
+    });
+  }
+
   async getCommitFiles(hash: string): Promise<DiffFile[]> {
     return this.workingTreeService.getCommitFiles(hash);
   }

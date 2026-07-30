@@ -41,6 +41,11 @@ import { MergeEditorManager } from "./views/mergeEditorManager";
 import { PushPanel } from "./views/pushPanel";
 import type { RollbackFileInfo } from "./views/rollbackPanel";
 import { RollbackPanel } from "./views/rollbackPanel";
+import {
+  EMPTY_CONTENT_REF,
+  getWorkingTreeDiffResources,
+  type WorkingTreeDiffResource,
+} from "./views/workingTreeDiffModel";
 import { GitWatcher } from "./watchers/gitWatcher";
 
 const NOT_GIT_REPO = { status: "not_git_repo" as const, data: null };
@@ -1411,32 +1416,36 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!ctx) return NOT_GIT_REPO;
     const workspaceRoot = ctx.repo.rootPath;
     const filePath = params.filePath as string;
-    const staged = params.staged as boolean | undefined;
-
-    const rightUri = vscode.Uri.joinPath(
-      vscode.Uri.file(workspaceRoot),
-      filePath,
+    const staged = Boolean(params.staged);
+    const changes = await ctx.gitService.getWorkingTreeChanges();
+    const file = changes.find(
+      (candidate) => candidate.path === filePath && candidate.staged === staged,
     );
-
-    if (staged) {
-      // Show diff between HEAD and staged
-      const leftUri = buildGitContentUri("HEAD", filePath, ctx.repoId);
-      await vscode.commands.executeCommand(
-        "vscode.diff",
-        leftUri,
-        rightUri,
-        `${filePath} (HEAD ↔ Staged)`,
-      );
-    } else {
-      // Show diff between HEAD and working tree
-      const leftUri = buildGitContentUri("HEAD", filePath, ctx.repoId);
-      await vscode.commands.executeCommand(
-        "vscode.diff",
-        leftUri,
-        rightUri,
-        `${filePath} (HEAD ↔ Working Tree)`,
-      );
+    if (!file) {
+      throw new Error(`Working tree change no longer exists: ${filePath}`);
     }
+    const resources = getWorkingTreeDiffResources(file);
+    const toUri = (resource: WorkingTreeDiffResource): vscode.Uri => {
+      if (resource.source === "workingTree") {
+        return vscode.Uri.joinPath(
+          vscode.Uri.file(workspaceRoot),
+          resource.path,
+        );
+      }
+      return buildGitContentUri(
+        resource.source === "empty" ? EMPTY_CONTENT_REF : resource.ref,
+        resource.path,
+        ctx.repoId,
+      );
+    };
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      toUri(resources.left),
+      toUri(resources.right),
+      staged
+        ? `${filePath} (HEAD ↔ Index)`
+        : `${filePath} (Index ↔ Working Tree)`,
+    );
     return { success: true };
   });
 

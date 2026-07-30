@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { GitService } from "../git/gitService";
 import type { RepoRegistry } from "../git/repoRegistry";
+import { readGitContent } from "./workingTreeDiffModel";
 
 export const BRANCHSHIFT_SCHEME = "branchshift";
 
@@ -40,6 +41,17 @@ export class GitContentProvider
     return this.registry.getActive()?.gitService ?? null; // legacy URI only
   }
 
+  private async readContent(uri: vscode.Uri): Promise<Buffer> {
+    const ref = new URLSearchParams(uri.query).get("ref") ?? "";
+    const filePath = uri.path.startsWith("/") ? uri.path.slice(1) : uri.path;
+    if (!ref || !filePath) return Buffer.alloc(0);
+    const service = this.resolveGitService(uri);
+    if (!service) {
+      throw vscode.FileSystemError.FileNotFound(uri);
+    }
+    return readGitContent(service, ref, filePath);
+  }
+
   // ─── TextDocumentContentProvider ──────────────────────────────────
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
@@ -51,14 +63,7 @@ export class GitContentProvider
       }
     }
 
-    const ref = new URLSearchParams(uri.query).get("ref") ?? "";
-    const filePath = uri.path.startsWith("/") ? uri.path.slice(1) : uri.path;
-    if (!ref || !filePath) {
-      return "";
-    }
-    const svc = this.resolveGitService(uri);
-    if (!svc) return "";
-    return svc.getFileContent(ref, filePath);
+    return (await this.readContent(uri)).toString("utf8");
   }
 
   // ─── FileSystemProvider (for binary files) ────────────────────────
@@ -83,14 +88,7 @@ export class GitContentProvider
   createDirectory(): void {}
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const ref = new URLSearchParams(uri.query).get("ref") ?? "";
-    const filePath = uri.path.startsWith("/") ? uri.path.slice(1) : uri.path;
-    if (!ref || !filePath) {
-      return new Uint8Array(0);
-    }
-    const svc = this.resolveGitService(uri);
-    if (!svc) return new Uint8Array(0);
-    const buffer = await svc.getFileContentBuffer(ref, filePath);
+    const buffer = await this.readContent(uri);
     return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   }
 

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { BRANCHSHIFT_SCHEME } from "./gitContentProvider";
+import { buildGitContentQuery } from "./workingTreeDiffModel";
 
 /**
  * Build a `branchshift:/` content URI that resolves to a specific file
@@ -19,6 +20,6 @@ export function buildGitContentUri(
   repoId: string,
 ): vscode.Uri {
   return vscode.Uri.parse(
-    `${BRANCHSHIFT_SCHEME}:/${filePath}?ref=${encodeURIComponent(ref)}&repo=${encodeURIComponent(repoId)}`,
+    `${BRANCHSHIFT_SCHEME}:/${filePath}?${buildGitContentQuery(ref, repoId)}`,
   );
 }

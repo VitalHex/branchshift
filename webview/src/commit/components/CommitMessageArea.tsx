@@ -35,8 +35,10 @@ export function CommitMessageArea() {
   const handleCommitAndPush = useCallback(async () => {
     if (!canCommit) return;
     setShowDropdown(false);
-    await commit();
-    await bridge.request("openPushPanel");
+    const committed = await commit();
+    if (committed) {
+      await bridge.request("openPushPanel");
+    }
   }, [canCommit, commit]);
 
   const handleKeyDown = useCallback(

@@ -18,7 +18,20 @@ export function Toolbar({
   hasChanges,
 }: ToolbarProps) {
   const [showViewMenu, setShowViewMenu] = useState(false);
-  const { expandedGroups, toggleGroup, expandAllDirs } = useCommitStore();
+  const {
+    changes,
+    highlightedFiles,
+    currentBranchHasUpstream,
+    showDiff,
+    expandedGroups,
+    toggleGroup,
+    expandAllDirs,
+  } = useCommitStore();
+  const highlightedRows = changes.filter((file) =>
+    highlightedFiles.has(`${file.path}:${file.staged}`),
+  );
+  const diffFile =
+    highlightedRows.length === 1 ? highlightedRows[0] : undefined;
 
   const handleExpandAll = useCallback(() => {
     // Expand file groups
@@ -77,7 +90,11 @@ export function Toolbar({
         <button
           type="button"
           className="commit-toolbar-btn"
-          disabled={!hasChanges}
+          aria-label="Show Diff"
+          disabled={!diffFile}
+          onClick={() => {
+            if (diffFile) showDiff(diffFile.path, diffFile.staged);
+          }}
         >
           <DiffIcon />
         </button>
@@ -86,7 +103,8 @@ export function Toolbar({
         <button
           type="button"
           className="commit-toolbar-btn"
-          style={{ opacity: 1 }}
+          aria-label="Pull"
+          disabled={!currentBranchHasUpstream}
           onClick={() => bridge.request("pullBranch", {})}
         >
           <PullIcon />
