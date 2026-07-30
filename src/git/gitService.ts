@@ -2,13 +2,17 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { GitCache, type ReachabilityCacheEntry } from "./cache";
+import { CommitService } from "./commit/commitService";
+import { IndexTransaction } from "./commit/indexTransaction";
 import { GitExecutor } from "./core/gitExecutor";
+import type { GitOperationResult } from "./core/operationResult";
 import { BranchShiftError, BranchShiftErrorCode } from "./errors";
 import { computeGraphLayout } from "./graphLayout";
 import type {
   BranchInfo,
   CherryPickState,
   CommitNode,
+  CommitRequest,
   DiffFile,
   FileStatus,
   GraphLayoutResult,
@@ -54,11 +58,17 @@ export class GitService {
   private readonly executor: GitExecutor;
   private readonly refService: RefService;
   private readonly workingTreeService: WorkingTreeService;
+  private readonly commitService: CommitService;
 
   constructor(readonly paths: RepositoryPaths) {
     this.executor = new GitExecutor(paths.workTreeRoot);
     this.refService = new RefService(this.executor);
     this.workingTreeService = new WorkingTreeService(this.executor);
+    this.commitService = new CommitService(
+      this.executor,
+      this.workingTreeService,
+      new IndexTransaction(this.executor),
+    );
   }
 
   get rootPath(): string {
@@ -1049,12 +1059,22 @@ export class GitService {
     this.invalidateCache();
   }
 
+  async commitSelected(
+    request: CommitRequest,
+  ): Promise<GitOperationResult<void>> {
+    const result = await this.commitService.commitSelected(request);
+    if (result.ok) this.invalidateCache();
+    return result;
+  }
+
   async commitAndPush(message: string, amend = false): Promise<void> {
     await this.commit(message, amend);
-    // Push current branch
+    await this.pushCurrentBranch(amend);
+  }
+
+  async pushCurrentBranch(force = false): Promise<void> {
     const branch = await this.getCurrentBranch();
     if (branch) {
-      const force = amend;
       await this.push(branch, force);
     }
   }

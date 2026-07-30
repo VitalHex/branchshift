@@ -155,6 +155,19 @@ export interface WorkingTreeFile {
   staged: boolean;
 }
 
+export interface CommitSelection {
+  path: string;
+  oldPath?: string;
+  staged: boolean;
+  status: WorkingTreeFile["status"];
+}
+
+export interface CommitRequest {
+  message: string;
+  amend: boolean;
+  selections: readonly CommitSelection[];
+}
+
 /** Shelf entry (git stash based) */
 export interface ShelveEntry {
   id: string; // stash@{n}

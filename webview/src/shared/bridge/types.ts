@@ -32,6 +32,26 @@ export type LogQueryResult =
   | ({ status: "ok"; hasMore: boolean } & GraphLayoutResult)
   | { status: "ref-unavailable"; ref: GitRefIdentity };
 
+export interface CommitSelection {
+  path: string;
+  oldPath?: string;
+  staged: boolean;
+  status:
+    | "added"
+    | "modified"
+    | "deleted"
+    | "renamed"
+    | "untracked"
+    | "conflicted";
+}
+
+export interface CommitChangesParams extends Record<string, unknown> {
+  message: string;
+  amend?: boolean;
+  selections?: readonly CommitSelection[];
+  filePaths?: string[];
+}
+
 /**
  * Public repo identity as seen by the webview. The host-only `RepositoryPaths`
  * (workTreeRoot/gitDir/commonDir) is intentionally NOT mirrored here.

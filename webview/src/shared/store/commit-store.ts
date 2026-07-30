@@ -267,17 +267,21 @@ export const useCommitStore = create<CommitStore>((set, get) => ({
     const { commitMessage, amend, changes, selectedFiles } = get();
     if (!commitMessage.trim()) return false;
 
-    // Get selected file paths (only unstaged ones need to be staged)
-    const filesToStage = changes
-      .filter((f) => !f.staged && selectedFiles.has(`${f.path}:${f.staged}`))
-      .map((f) => f.path);
+    const selections = changes
+      .filter((f) => selectedFiles.has(`${f.path}:${f.staged}`))
+      .map((f) => ({
+        path: f.path,
+        ...(f.oldPath ? { oldPath: f.oldPath } : {}),
+        status: f.status,
+        staged: f.staged,
+      }));
 
     try {
       set({ loading: true });
       await bridge.request("commitChanges", {
         message: commitMessage,
         amend,
-        filePaths: filesToStage,
+        selections,
       });
       set({ commitMessage: "", amend: false });
       await get().fetchChanges();
@@ -294,16 +298,21 @@ export const useCommitStore = create<CommitStore>((set, get) => ({
     const { commitMessage, amend, changes, selectedFiles } = get();
     if (!commitMessage.trim()) return false;
 
-    const filesToStage = changes
-      .filter((f) => !f.staged && selectedFiles.has(`${f.path}:${f.staged}`))
-      .map((f) => f.path);
+    const selections = changes
+      .filter((f) => selectedFiles.has(`${f.path}:${f.staged}`))
+      .map((f) => ({
+        path: f.path,
+        ...(f.oldPath ? { oldPath: f.oldPath } : {}),
+        status: f.status,
+        staged: f.staged,
+      }));
 
     try {
       set({ loading: true });
       await bridge.request("commitAndPush", {
         message: commitMessage,
         amend,
-        filePaths: filesToStage,
+        selections,
       });
       set({ commitMessage: "", amend: false });
       await get().fetchChanges();

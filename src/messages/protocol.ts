@@ -1,7 +1,11 @@
 import type { GitRefIdentity } from "../git/branchDashboardState";
 import type { GitService } from "../git/gitService";
 import type { RepoDescriptor, RepositoryPaths } from "../git/repoRegistry";
-import type { GraphLayoutResult, LaneSnapshot } from "../git/types";
+import type {
+  CommitSelection,
+  GraphLayoutResult,
+  LaneSnapshot,
+} from "../git/types";
 
 export type LogQueryRevision =
   | { kind: "all" }
@@ -30,6 +34,13 @@ export interface LogQueryParams extends Record<string, unknown> {
 export type LogQueryResult =
   | ({ status: "ok"; hasMore: boolean } & GraphLayoutResult)
   | { status: "ref-unavailable"; ref: GitRefIdentity };
+
+export interface CommitChangesParams extends Record<string, unknown> {
+  message: string;
+  amend?: boolean;
+  selections?: readonly CommitSelection[];
+  filePaths?: string[];
+}
 
 export interface RequestMessage {
   type: "request";

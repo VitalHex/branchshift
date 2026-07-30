@@ -4,6 +4,7 @@ import {
   BranchDashboardStateStore,
   type GitRefIdentity,
 } from "./git/branchDashboardState";
+import type { GitOperationResult } from "./git/core/operationResult";
 import { BranchShiftError, BranchShiftErrorCode } from "./git/errors";
 import { GitService } from "./git/gitService";
 import { discoverRepos } from "./git/repoDiscovery";
@@ -19,7 +20,7 @@ import {
   RepoSelectionError,
   Serializer,
 } from "./git/repoSelection";
-import type { DiffFile } from "./git/types";
+import type { CommitSelection, DiffFile } from "./git/types";
 import { registerLogHandlers } from "./messages/logHandlers";
 import { MessageRouter } from "./messages/messageRouter";
 import { ErrorCode } from "./messages/protocol";
@@ -46,6 +47,13 @@ const NOT_GIT_REPO = { status: "not_git_repo" as const, data: null };
 
 /** Temporary storage for shelf diff content (base/modified) */
 const shelfDiffContent = new Map<string, string>();
+
+function requireSuccessfulGitOperation(
+  result: GitOperationResult<unknown>,
+): void {
+  if (result.ok) return;
+  throw new BranchShiftError(result.code, result.message, result.recovery);
+}
 
 /**
  * Wrap a git operation with progress events tagged by the acting repo.
@@ -1212,14 +1220,25 @@ export async function activate(context: vscode.ExtensionContext) {
     const { gitService } = ctx;
     const message = params.message as string;
     const amend = params.amend as boolean | undefined;
+    const selections = params.selections as
+      | readonly CommitSelection[]
+      | undefined;
     const filePaths = params.filePaths as string[] | undefined;
 
-    // Stage specified files if provided
-    if (filePaths && filePaths.length > 0) {
-      await gitService.stageFiles(filePaths);
+    if (selections !== undefined) {
+      const result = await gitService.commitSelected({
+        message,
+        amend: amend ?? false,
+        selections,
+      });
+      requireSuccessfulGitOperation(result);
+    } else {
+      if (filePaths && filePaths.length > 0) {
+        await gitService.stageFiles(filePaths);
+      }
+      await gitService.commit(message, amend ?? false);
     }
 
-    await gitService.commit(message, amend ?? false);
     messageRouter.broadcastEvent("commitStateChanged", {
       repoId: ctx.repoId,
     });
@@ -1235,14 +1254,26 @@ export async function activate(context: vscode.ExtensionContext) {
     const { gitService } = ctx;
     const message = params.message as string;
     const amend = params.amend as boolean | undefined;
+    const selections = params.selections as
+      | readonly CommitSelection[]
+      | undefined;
     const filePaths = params.filePaths as string[] | undefined;
 
-    if (filePaths && filePaths.length > 0) {
-      await gitService.stageFiles(filePaths);
-    }
-
     return withProgress(messageRouter, ctx.repoId, async () => {
-      await gitService.commitAndPush(message, amend ?? false);
+      if (selections !== undefined) {
+        const result = await gitService.commitSelected({
+          message,
+          amend: amend ?? false,
+          selections,
+        });
+        requireSuccessfulGitOperation(result);
+        await gitService.pushCurrentBranch(amend ?? false);
+      } else {
+        if (filePaths && filePaths.length > 0) {
+          await gitService.stageFiles(filePaths);
+        }
+        await gitService.commitAndPush(message, amend ?? false);
+      }
       messageRouter.broadcastEvent("commitStateChanged", {
         repoId: ctx.repoId,
       });

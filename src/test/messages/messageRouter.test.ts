@@ -27,13 +27,13 @@ interface RouterWithHandleRequest {
 }
 
 describe("MessageRouter repo context", () => {
-  it("preserves an explicitly empty BranchShift recovery message", async () => {
+  it("preserves the typed selected-commit error code and recovery", async () => {
     const router = new MessageRouter();
     router.handle("getStatus", async () => {
       throw new BranchShiftError(
-        BranchShiftErrorCode.COMMIT_REJECTED,
-        "nope",
-        "",
+        BranchShiftErrorCode.PARTIAL_FILE_SELECTION_UNSUPPORTED,
+        "Cannot commit only the workspace row.",
+        "Include the staged row and retry.",
       );
     });
     const responses: ResponseMessage[] = [];
@@ -44,7 +44,11 @@ describe("MessageRouter repo context", () => {
       { type: "request", id: "recovery", command: "getStatus", params: {} },
     );
 
-    assert.strictEqual(responses[0].error?.recovery, "");
+    assert.deepStrictEqual(responses[0].error, {
+      code: "PARTIAL_FILE_SELECTION_UNSUPPORTED",
+      message: "Cannot commit only the workspace row.",
+      recovery: "Include the staged row and retry.",
+    });
   });
 
   it("resolves and passes RequestContext to handler", async () => {
