@@ -6,12 +6,8 @@ import { GitContentProvider } from "../../views/gitContentProvider";
 import { buildGitContentUri } from "../../views/gitUri";
 
 /**
- * Task 21 (P2#4): every branchshift:/ diff URI must carry `?repo=<repoId>` so
- * GitContentProvider binds the URI to the correct repo regardless of which repo
- * is currently "active". This covers the helper round-trip, the provider's
- * repo-from-query resolution (even when a different repo is active), and the
- * editSource resolution primitive (`registry.get(repoId)` while another repo is
- * active).
+ * Content URIs retain repository identity so the provider resolves revisions
+ * from the repository that created the diff.
  */
 
 /** Minimal GitService stub that returns a marker string per repo. */
@@ -55,6 +51,22 @@ describe("buildGitContentUri — ref + repo encode/decode", () => {
     assert.strictEqual(params.get("repo"), repoId);
     assert.strictEqual(params.get("ref"), "abc");
   });
+
+  for (const [label, filePath] of [
+    ["question marks", "dir/query?name.txt"],
+    ["hash signs", "dir/fragment#name.txt"],
+    ["percent signs", "dir/percent%name.txt"],
+  ] as const) {
+    it(`preserves ${label} in file paths`, () => {
+      const uri = buildGitContentUri("abc", filePath, "repoA");
+      const params = new URLSearchParams(uri.query);
+
+      assert.strictEqual(uri.path, `/${filePath}`);
+      assert.strictEqual(params.get("ref"), "abc");
+      assert.strictEqual(params.get("repo"), "repoA");
+      assert.strictEqual(uri.fragment, "");
+    });
+  }
 });
 
 describe("GitContentProvider — resolves repo from ?repo= even when another repo is active", () => {
@@ -95,6 +107,25 @@ describe("GitContentProvider — resolves repo from ?repo= even when another rep
     const content = await provider.provideTextDocumentContent(uri);
 
     assert.strictEqual(content, "content-from-A");
+  });
+
+  it("passes a special-character file path to the selected repository unchanged", async () => {
+    const registry = new RepoRegistry();
+    const filePath = "dir/query?fragment#percent%file.txt";
+    let requestedPath = "";
+    registry.add(makeRepo("repoA", "/repos/A"), {
+      getFileContent: async (_ref: string, path: string) => {
+        requestedPath = path;
+        return "content";
+      },
+    } as unknown as GitService);
+
+    const provider = new GitContentProvider(registry);
+    await provider.provideTextDocumentContent(
+      buildGitContentUri("abc", filePath, "repoA"),
+    );
+
+    assert.strictEqual(requestedPath, filePath);
   });
 });
 

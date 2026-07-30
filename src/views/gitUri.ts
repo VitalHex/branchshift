@@ -19,7 +19,9 @@ export function buildGitContentUri(
   filePath: string,
   repoId: string,
 ): vscode.Uri {
-  return vscode.Uri.parse(
-    `${BRANCHSHIFT_SCHEME}:/${filePath}?${buildGitContentQuery(ref, repoId)}`,
-  );
+  return vscode.Uri.from({
+    scheme: BRANCHSHIFT_SCHEME,
+    path: `/${filePath}`,
+    query: buildGitContentQuery(ref, repoId),
+  });
 }
