@@ -229,6 +229,51 @@ describe("commit-store request coordination", () => {
     ).toHaveLength(2);
   });
 
+  it("keeps the shelf refresh domain active until both shelf reads settle", async () => {
+    const patchShelves = deferred<unknown[]>();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    let nativeCalls = 0;
+    let patchCalls = 0;
+    vi.mocked(bridge.request).mockImplementation((command) => {
+      if (command === "getShelves") {
+        nativeCalls += 1;
+        if (nativeCalls === 1) {
+          return Promise.reject(new Error("native shelf refresh failed"));
+        }
+        return Promise.resolve([]);
+      }
+      if (command === "getIdeaShelves") {
+        patchCalls += 1;
+        if (patchCalls === 1) return patchShelves.promise;
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    bridgeEvents.listener?.("gitStateChanged", { repoId: "/repo" });
+    await flushMicrotasks();
+    bridgeEvents.listener?.("commitStateChanged", { repoId: "/repo" });
+    bridgeEvents.listener?.("gitStateChanged", { repoId: "/repo" });
+    await flushMicrotasks();
+
+    const callsBeforePatchSettled = {
+      native: nativeCalls,
+      patch: patchCalls,
+    };
+
+    patchShelves.resolve([]);
+    await flushMicrotasks();
+
+    expect(callsBeforePatchSettled.native).toBe(1);
+    expect(callsBeforePatchSettled.patch).toBe(1);
+    expect(nativeCalls).toBe(2);
+    expect(patchCalls).toBe(2);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("retains valid working-tree data when a refresh fails", async () => {
     const existing = [
       { path: "kept.ts", status: "modified" as const, staged: false },

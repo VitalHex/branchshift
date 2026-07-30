@@ -88,7 +88,17 @@ export function createDataSlice({
     refreshRefs,
 
     async refreshShelves() {
-      await Promise.all([refreshNativeShelves(), refreshPatchShelves()]);
+      const results = await Promise.allSettled([
+        refreshNativeShelves(),
+        refreshPatchShelves(),
+      ]);
+      const failures = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) {
+        throw new AggregateError(failures, "Shelf refresh failed");
+      }
     },
   };
 }
