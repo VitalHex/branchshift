@@ -45,6 +45,7 @@ const LOG_FORMAT = [
 
 import { RefService } from "./refs/refService";
 import type { RepositoryPaths } from "./repoRegistry";
+import { WorkingTreeService } from "./workingTree/workingTreeService";
 
 export class GitService {
   readonly cache = new GitCache();
@@ -52,10 +53,12 @@ export class GitService {
 
   private readonly executor: GitExecutor;
   private readonly refService: RefService;
+  private readonly workingTreeService: WorkingTreeService;
 
   constructor(readonly paths: RepositoryPaths) {
     this.executor = new GitExecutor(paths.workTreeRoot);
     this.refService = new RefService(this.executor);
+    this.workingTreeService = new WorkingTreeService(this.executor);
   }
 
   get rootPath(): string {
@@ -418,16 +421,7 @@ export class GitService {
   }
 
   async getCommitFiles(hash: string): Promise<DiffFile[]> {
-    const output = await this.execGit([
-      "diff-tree",
-      "--root",
-      "--no-commit-id",
-      "-r",
-      "--name-status",
-      "-M",
-      hash,
-    ]);
-    return parseDiffNameStatus(output);
+    return this.workingTreeService.getCommitFiles(hash);
   }
 
   async getCommitRangeFiles(hashes: string[]): Promise<DiffFile[]> {
@@ -468,35 +462,11 @@ export class GitService {
   }
 
   async getStatus(): Promise<FileStatus[]> {
-    const output = await this.execGit(["status", "--porcelain=v1"]);
-    const files: FileStatus[] = [];
+    return this.workingTreeService.getStatus();
+  }
 
-    for (const line of output.split("\n")) {
-      if (line.length < 4) {
-        continue;
-      }
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-      const rest = line.substring(3);
-
-      // Handle renames: "R  old -> new"
-      const arrowIdx = rest.indexOf(" -> ");
-      if (arrowIdx !== -1) {
-        files.push({
-          path: rest.substring(arrowIdx + 4),
-          oldPath: rest.substring(0, arrowIdx),
-          indexStatus,
-          workTreeStatus,
-        });
-      } else {
-        files.push({
-          path: rest,
-          indexStatus,
-          workTreeStatus,
-        });
-      }
-    }
-    return files;
+  getIndexFileContent(path: string): Promise<Buffer> {
+    return this.workingTreeService.getIndexFileContent(path);
   }
 
   async getCommitParents(hash: string): Promise<string[]> {
@@ -1052,70 +1022,7 @@ export class GitService {
   // ─── Commit Panel Operations ───────────────────────────────────────
 
   async getWorkingTreeChanges(): Promise<import("./types").WorkingTreeFile[]> {
-    const output = await this.execGit(["status", "--porcelain=v1", "-uall"]);
-    const files: import("./types").WorkingTreeFile[] = [];
-
-    for (const line of output.split("\n")) {
-      if (line.length < 4) continue;
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-
-      // Skip ignored files
-      if (indexStatus === "!" && workTreeStatus === "!") continue;
-
-      const rest = line.substring(3);
-
-      // Handle renames
-      const arrowIdx = rest.indexOf(" -> ");
-      const filePath = arrowIdx !== -1 ? rest.substring(arrowIdx + 4) : rest;
-      const oldPath = arrowIdx !== -1 ? rest.substring(0, arrowIdx) : undefined;
-
-      // Determine if file is staged
-      const staged =
-        indexStatus !== " " && indexStatus !== "?" && indexStatus !== "!";
-
-      // Determine status
-      let status: import("./types").WorkingTreeFile["status"];
-      if (indexStatus === "?" && workTreeStatus === "?") {
-        status = "untracked";
-      } else if (
-        indexStatus === "U" ||
-        workTreeStatus === "U" ||
-        (indexStatus === "A" && workTreeStatus === "A") ||
-        (indexStatus === "D" && workTreeStatus === "D")
-      ) {
-        status = "conflicted";
-      } else if (indexStatus === "A" || workTreeStatus === "A") {
-        status = "added";
-      } else if (indexStatus === "D" || workTreeStatus === "D") {
-        status = "deleted";
-      } else if (indexStatus === "R" || workTreeStatus === "R") {
-        status = "renamed";
-      } else {
-        status = "modified";
-      }
-
-      // For files that have both staged and unstaged changes, emit two entries
-      if (
-        staged &&
-        workTreeStatus !== " " &&
-        workTreeStatus !== "?" &&
-        workTreeStatus !== "!"
-      ) {
-        // Staged version
-        files.push({ path: filePath, oldPath, status, staged: true });
-        // Unstaged version
-        files.push({
-          path: filePath,
-          oldPath,
-          status: "modified",
-          staged: false,
-        });
-      } else {
-        files.push({ path: filePath, oldPath, status, staged });
-      }
-    }
-    return files;
+    return this.workingTreeService.getWorkingTreeChanges();
   }
 
   async stageFiles(filePaths: string[]): Promise<void> {
@@ -1790,43 +1697,6 @@ function parseWorktreeCheckouts(output: string): Map<string, string> {
     }
   }
   return result;
-}
-
-function parseDiffNameStatus(output: string): DiffFile[] {
-  const files: DiffFile[] = [];
-  for (const line of output.trim().split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const parts = line.split("\t");
-    const statusCode = parts[0]?.trim() ?? "";
-
-    if (statusCode.startsWith("R") || statusCode.startsWith("C")) {
-      const oldPath = parts[1] ?? "";
-      const newPath = parts[2] ?? "";
-      files.push({
-        oldPath,
-        newPath,
-        status: statusCode.startsWith("R") ? "renamed" : "copied",
-        isBinary: false,
-      });
-    } else {
-      const filePath = parts[1] ?? "";
-      let status: DiffFile["status"] = "modified";
-      if (statusCode === "A") {
-        status = "added";
-      } else if (statusCode === "D") {
-        status = "deleted";
-      }
-      files.push({
-        oldPath: filePath,
-        newPath: filePath,
-        status,
-        isBinary: false,
-      });
-    }
-  }
-  return files;
 }
 
 function parseLogOutput(output: string): CommitNode[] {
