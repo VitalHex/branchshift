@@ -43,6 +43,7 @@ const LOG_FORMAT = [
   "%D", // refs
 ].join(FMT_FIELD_SEP);
 
+import { RefService } from "./refs/refService";
 import type { RepositoryPaths } from "./repoRegistry";
 
 export class GitService {
@@ -50,9 +51,11 @@ export class GitService {
   private reachabilityCache: ReachabilityCacheEntry | null = null;
 
   private readonly executor: GitExecutor;
+  private readonly refService: RefService;
 
   constructor(readonly paths: RepositoryPaths) {
     this.executor = new GitExecutor(paths.workTreeRoot);
+    this.refService = new RefService(this.executor);
   }
 
   get rootPath(): string {
@@ -281,83 +284,7 @@ export class GitService {
       return cached;
     }
 
-    const localFormat = [
-      "%(refname:short)",
-      "%(refname)",
-      "%(HEAD)",
-      "%(upstream:short)",
-      "%(upstream:track,nobracket)",
-      "%(objectname)",
-    ].join(REF_FMT_FIELD_SEP);
-
-    const worktreeCheckouts = parseWorktreeCheckouts(
-      await this.execGit(["worktree", "list", "--porcelain"]).catch(() => ""),
-    );
-
-    const localOutput = await this.execGit([
-      "branch",
-      `--format=${localFormat}`,
-    ]);
-
-    const remoteOutput = await this.execGit([
-      "branch",
-      "-r",
-      `--format=${localFormat}`,
-    ]).catch(() => "");
-
-    const branches: BranchInfo[] = [];
-
-    for (const line of localOutput.trim().split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      const fields = line.split(FIELD_SEP);
-      const name = fields[0]?.trim() ?? "";
-      const fullRef = fields[1]?.trim() ?? `refs/heads/${name}`;
-      const isCurrent = fields[2]?.trim() === "*";
-      const upstream = fields[3]?.trim() || undefined;
-      const track = fields[4]?.trim() ?? "";
-      const lastCommitHash = fields[5]?.trim() ?? "";
-
-      const { ahead, behind } = parseTrack(track);
-
-      branches.push({
-        name,
-        fullRef,
-        isRemote: false,
-        isCurrent,
-        upstream,
-        checkedOutWorktreePath: worktreeCheckouts.get(fullRef),
-        ahead,
-        behind,
-        lastCommitHash,
-      });
-    }
-
-    for (const line of remoteOutput.trim().split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      const fields = line.split(FIELD_SEP);
-      const name = fields[0]?.trim() ?? "";
-      const fullRef = fields[1]?.trim() ?? `refs/remotes/${name}`;
-      const lastCommitHash = fields[5]?.trim() ?? "";
-
-      // Skip HEAD pointers like origin/HEAD
-      if (name.endsWith("/HEAD")) {
-        continue;
-      }
-
-      branches.push({
-        name,
-        fullRef,
-        isRemote: true,
-        isCurrent: false,
-        ahead: 0,
-        behind: 0,
-        lastCommitHash,
-      });
-    }
+    const branches = await this.refService.getBranches();
 
     this.cache.set(cacheKey, branches);
     return branches;
@@ -1989,18 +1916,4 @@ function parseRefs(refsStr: string): RefInfo[] {
     }
   }
   return refs;
-}
-
-function parseTrack(track: string): { ahead: number; behind: number } {
-  let ahead = 0;
-  let behind = 0;
-  const aheadMatch = track.match(/ahead (\d+)/);
-  if (aheadMatch) {
-    ahead = parseInt(aheadMatch[1], 10);
-  }
-  const behindMatch = track.match(/behind (\d+)/);
-  if (behindMatch) {
-    behind = parseInt(behindMatch[1], 10);
-  }
-  return { ahead, behind };
 }

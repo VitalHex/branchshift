@@ -416,4 +416,84 @@ describe("BranchTree unified refs", () => {
     expect(setFilter).toHaveBeenCalledTimes(1);
     expect(setFilter).toHaveBeenCalledWith({ branch: "refs/tags/v1.0.0" });
   });
+
+  it("rebuilds repeated grouped and flat presentations without duplicating branches", () => {
+    seedTree(false);
+    panelStore.setState({
+      branches: [
+        ...panelStore.getState().branches,
+        {
+          name: "feature/other",
+          fullRef: "refs/heads/feature/other",
+          isRemote: false,
+          isCurrent: false,
+          isFavorite: false,
+          ahead: 0,
+          behind: 0,
+          lastCommitHash: "other-tip",
+        },
+      ],
+      branchGroupByDirectory: true,
+    });
+    const { getAllByText, rerender } = renderWithStore(<BranchTree />);
+
+    expect(getAllByText("plain")).toHaveLength(1);
+    expect(getAllByText("other")).toHaveLength(1);
+
+    panelStore.setState({ branchGroupByDirectory: false });
+    rerender(<BranchTree />);
+    panelStore.setState({ branchGroupByDirectory: true });
+    rerender(<BranchTree />);
+
+    expect(getAllByText("plain")).toHaveLength(1);
+    expect(getAllByText("other")).toHaveLength(1);
+  });
+
+  it("keeps a rebuilt remote directory foldable", () => {
+    seedTree(false);
+    panelStore.setState({
+      branchGroupByDirectory: true,
+      branches: [
+        ...panelStore.getState().branches,
+        {
+          name: "origin/feature/one",
+          fullRef: "refs/remotes/origin/feature/one",
+          isRemote: true,
+          isCurrent: false,
+          isFavorite: false,
+          ahead: 0,
+          behind: 0,
+          lastCommitHash: "remote-one",
+        },
+      ],
+    });
+    const { getByText, queryByText, rerender } = renderWithStore(
+      <BranchTree />,
+    );
+
+    fireEvent.click(getByText("origin"));
+    expect(queryByText("one")).toBeNull();
+
+    panelStore.setState((state) => ({
+      branches: [
+        ...state.branches,
+        {
+          name: "origin/feature/two",
+          fullRef: "refs/remotes/origin/feature/two",
+          isRemote: true,
+          isCurrent: false,
+          isFavorite: false,
+          ahead: 0,
+          behind: 0,
+          lastCommitHash: "remote-two",
+        },
+      ],
+    }));
+    rerender(<BranchTree />);
+    expect(queryByText("two")).toBeNull();
+
+    fireEvent.click(getByText("origin"));
+    expect(getByText("one")).toBeTruthy();
+    expect(getByText("two")).toBeTruthy();
+  });
 });
