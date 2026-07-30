@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -268,47 +267,11 @@ export class GitService {
   }
 
   protected loadReachableHashes(tip: string): Promise<Set<string>> {
-    return new Promise((resolve, reject) => {
-      const hashes = new Set<string>();
-      let remainder = "";
-      let stderr = "";
-      const child = spawn("git", ["rev-list", tip], {
-        cwd: this.rootPath,
-        env: {
-          ...process.env,
-          LC_ALL: "C",
-          GIT_TERMINAL_PROMPT: "0",
-        },
-      });
-
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        const lines = `${remainder}${chunk}`.split("\n");
-        remainder = lines.pop() ?? "";
-        for (const line of lines) {
-          const hash = line.trim();
-          if (hash) hashes.add(hash);
-        }
-      });
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
-      });
-      child.once("error", reject);
-      child.once("close", (code) => {
-        const finalHash = remainder.trim();
-        if (finalHash) hashes.add(finalHash);
-        if (code === 0) {
-          resolve(hashes);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `git rev-list exited with status ${String(code)}`,
-          ),
-        );
-      });
-    });
+    return this.executor
+      .lines(["rev-list", tip])
+      .then(
+        (lines) => new Set(lines.map((line) => line.trim()).filter(Boolean)),
+      );
   }
 
   async getBranches(): Promise<BranchInfo[]> {

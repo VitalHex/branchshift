@@ -109,4 +109,31 @@ describe("GitExecutor", () => {
       /maxBuffer/,
     );
   });
+
+  it("streams line output without the buffered command limit", async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "branchshift-bin-"));
+    const git = path.join(bin, "git");
+    await fs.writeFile(git, "#!/bin/sh\nprintf 'one\\ntwo'\n");
+    await fs.chmod(git, 0o755);
+    const executor = new GitExecutor(bin);
+
+    assert.deepStrictEqual(await executor.lines([], { env: { PATH: bin } }), [
+      "one",
+      "two",
+    ]);
+  });
+
+  it("rejects when the input pipe closes before writing completes", async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "branchshift-bin-"));
+    const git = path.join(bin, "git");
+    await fs.writeFile(git, "#!/bin/sh\nexec 0<&-\nexit 0\n");
+    await fs.chmod(git, 0o755);
+    const executor = new GitExecutor(bin);
+
+    await assert.rejects(() =>
+      executor.withInput([], Buffer.alloc(16 * 1024 * 1024), {
+        env: { PATH: bin },
+      }),
+    );
+  });
 });

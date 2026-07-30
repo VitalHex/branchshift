@@ -56,6 +56,45 @@ export class GitExecutor {
     }
   }
 
+  lines(args: readonly string[], options?: GitRunOptions): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      const child = spawn("git", args, this.execOptions(options));
+      const lines: string[] = [];
+      let remainder = "";
+      let stderr = "";
+      let settled = false;
+
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        const parts = `${remainder}${chunk}`.split("\n");
+        remainder = parts.pop() ?? "";
+        for (const line of parts) {
+          lines.push(line);
+        }
+      });
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      child.once("error", (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      });
+      child.once("close", (exitCode) => {
+        if (settled) return;
+        settled = true;
+        if (remainder) lines.push(remainder);
+        const code = exitCode ?? -1;
+        if (this.allowed(options).includes(code)) {
+          resolve(lines);
+          return;
+        }
+        reject(new GitCommandError(args, code, stderr));
+      });
+    });
+  }
+
   withInput(
     args: readonly string[],
     input: Buffer | string,
@@ -87,6 +126,12 @@ export class GitExecutor {
         settled = true;
         reject(error);
       });
+      child.stdin.once("error", (error) => {
+        if (settled) return;
+        settled = true;
+        child.kill();
+        reject(error);
+      });
       child.once("close", (exitCode) => {
         if (settled) return;
         settled = true;
@@ -99,7 +144,14 @@ export class GitExecutor {
           new GitCommandError(args, code, Buffer.concat(stderr).toString()),
         );
       });
-      child.stdin.end(input);
+      try {
+        child.stdin.end(input);
+      } catch (error) {
+        if (settled) return;
+        settled = true;
+        child.kill();
+        reject(error);
+      }
     });
   }
 
