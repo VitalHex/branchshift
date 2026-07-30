@@ -20,7 +20,11 @@ export function parseNameStatusZ(output: Buffer): DiffFile[] {
   for (let index = 0; index < fields.length; index += 1) {
     const statusCode = fields[index] ?? "";
     const kind = statusCode[0] ?? "";
-    if (!/^[AMDRCT][0-9]*$/.test(statusCode))
+    const hasValidStatusCode =
+      kind === "R" || kind === "C"
+        ? /^[RC][0-9]+$/.test(statusCode)
+        : /^[AMDT]$/.test(statusCode);
+    if (!hasValidStatusCode)
       throw new Error("Malformed git name-status record");
     const firstPath = fields[index + 1];
     if (!firstPath) throw new Error("Git name-status record has no path");

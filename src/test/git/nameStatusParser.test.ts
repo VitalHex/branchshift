@@ -64,6 +64,9 @@ describe("parseNameStatusZ", () => {
 
   it("rejects malformed and truncated records", () => {
     assert.throws(() => parseNameStatusZ(Buffer.from("Q\0file\0")));
+    assert.throws(() => parseNameStatusZ(Buffer.from("M100\0file\0")));
+    assert.throws(() => parseNameStatusZ(Buffer.from("A2\0file\0")));
+    assert.throws(() => parseNameStatusZ(Buffer.from("T7\0file\0")));
     assert.throws(() => parseNameStatusZ(Buffer.from("R100\0old\0")));
     assert.throws(() => parseNameStatusZ(Buffer.from("M\0\0")));
   });
