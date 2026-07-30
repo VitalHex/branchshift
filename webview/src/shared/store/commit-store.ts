@@ -1,498 +1,50 @@
 import { create } from "zustand";
 import { bridge } from "../bridge";
+import { RequestCoordinator } from "../requests/requestCoordinator";
+import { createDataSlice } from "./commit/dataSlice";
+import { createDraftSlice } from "./commit/draftSlice";
+import { createOperationSlice } from "./commit/operationSlice";
+import { createSelectionSlice } from "./commit/selectionSlice";
+import type {
+  CommitSliceContext,
+  CommitStore,
+  IdeaShelfEntry,
+  ShelveEntry,
+  WorkingTreeFile,
+} from "./commit/types";
 import { useRepoStore } from "./repo-store";
 
-export interface WorkingTreeFile {
-  path: string;
-  oldPath?: string;
-  status:
-    | "added"
-    | "modified"
-    | "deleted"
-    | "renamed"
-    | "untracked"
-    | "conflicted";
-  staged: boolean;
-}
+export type { IdeaShelfEntry, ShelveEntry, WorkingTreeFile };
 
-export interface ShelveEntry {
-  id: string;
-  message: string;
-  date: string;
-  branch: string;
-  files: string[];
-}
+const coordinator = new RequestCoordinator((error) => {
+  console.error("Commit refresh failed:", error);
+});
 
-export interface IdeaShelfEntry {
-  name: string;
-  description: string;
-  date: string;
-  patchPath: string;
-  files: string[];
-}
+export const useCommitStore = create<CommitStore>((set, get) => {
+  const context: CommitSliceContext = {
+    set,
+    get,
+    coordinator,
+    request: (command, params) => bridge.request(command, params),
+  };
 
-type TabType = "commit" | "shelf" | "stash";
+  return {
+    ...createDraftSlice(context),
+    ...createDataSlice(context),
+    ...createSelectionSlice(context),
+    ...createOperationSlice(context),
+  };
+});
 
-interface CommitStore {
-  // File changes
-  changes: WorkingTreeFile[];
-  selectedFiles: Set<string>;
-  /** Files highlighted via click/Cmd+click (for context menu operations) */
-  highlightedFiles: Set<string>;
-
-  // Commit state
-  commitMessage: string;
-  amend: boolean;
-
-  // Shelf
-  shelves: ShelveEntry[];
-
-  // IDEA Shelf
-  ideaShelves: IdeaShelfEntry[];
-
-  // UI state
-  activeTab: TabType;
-  loading: boolean;
-  expandedGroups: Set<string>;
-  groupByDirectory: boolean;
-  showUnversioned: boolean;
-  /** Collapsed directory paths in tree view */
-  collapsedDirs: Set<string>;
-
-  // Actions
-  fetchChanges: () => Promise<void>;
-  fetchShelves: () => Promise<void>;
-  setCommitMessage: (msg: string) => void;
-  setAmend: (amend: boolean) => void;
-  toggleFileSelection: (filePath: string) => void;
-  setFileKeys: (keys: string[], selected: boolean) => void;
-  selectAllFiles: () => void;
-  deselectAllFiles: () => void;
-  highlightFile: (key: string, mode: "single" | "toggle") => void;
-  stageFile: (filePath: string) => Promise<void>;
-  unstageFile: (filePath: string) => Promise<void>;
-  stageAll: () => Promise<void>;
-  unstageAll: () => Promise<void>;
-  commit: () => Promise<boolean>;
-  commitAndPush: () => Promise<boolean>;
-  rollbackFile: (filePath: string) => Promise<void>;
-  showDiff: (filePath: string, staged?: boolean) => Promise<void>;
-  shelveChanges: (message?: string, filePaths?: string[]) => Promise<void>;
-  unshelveChanges: (stashId: string, drop?: boolean) => Promise<void>;
-  deleteShelve: (stashId: string) => Promise<void>;
-  fetchIdeaShelves: () => Promise<void>;
-  ideaShelveChanges: (message?: string, filePaths?: string[]) => Promise<void>;
-  ideaUnshelveChanges: (shelfName: string, drop?: boolean) => Promise<void>;
-  deleteIdeaShelf: (shelfName: string) => Promise<void>;
-  setActiveTab: (tab: TabType) => void;
-  toggleGroup: (group: string) => void;
-  toggleDir: (dirPath: string) => void;
-  expandAllDirs: () => void;
-  collapseAllDirs: (allDirPaths: string[]) => void;
-  toggleGroupByDirectory: () => void;
-  toggleShowUnversioned: () => void;
-  refresh: () => Promise<void>;
-}
-
-export const useCommitStore = create<CommitStore>((set, get) => ({
-  changes: [],
-  selectedFiles: new Set<string>(),
-  highlightedFiles: new Set<string>(),
-  commitMessage: "",
-  amend: false,
-  shelves: [],
-  ideaShelves: [],
-  activeTab: "commit",
-  loading: false,
-  expandedGroups: new Set(["changes", "unversioned", "staged"]),
-  groupByDirectory: true,
-  showUnversioned: true,
-  collapsedDirs: new Set<string>(),
-
-  async fetchChanges() {
-    set({ loading: true });
-    const start = Date.now();
-    try {
-      const result = (await bridge.request(
-        "getWorkingTreeChanges",
-      )) as WorkingTreeFile[];
-      if (Array.isArray(result)) {
-        const newPaths = new Set(result.map((f) => `${f.path}:${f.staged}`));
-        const { selectedFiles, changes } = get();
-        if (changes.length === 0) {
-          // First load — no auto-selection (user manually selects files)
-          set({ changes: result, selectedFiles: new Set<string>() });
-        } else {
-          // Refresh — preserve user's selection state (only keep existing selections)
-          const preserved = new Set<string>();
-          for (const p of selectedFiles) {
-            if (newPaths.has(p)) preserved.add(p);
-          }
-          set({ changes: result, selectedFiles: preserved });
-        }
-      }
-    } catch (err) {
-      console.error("fetchChanges failed:", err);
-    } finally {
-      // Ensure loading bar is visible for at least 300ms
-      const elapsed = Date.now() - start;
-      if (elapsed < 300) {
-        await new Promise((r) => setTimeout(r, 300 - elapsed));
-      }
-      set({ loading: false });
-    }
-  },
-
-  async fetchShelves() {
-    try {
-      const result = (await bridge.request("getShelves")) as ShelveEntry[];
-      if (Array.isArray(result)) {
-        set({ shelves: result });
-      }
-    } catch (err) {
-      console.error("fetchShelves failed:", err);
-    }
-  },
-
-  setCommitMessage(msg: string) {
-    set({ commitMessage: msg });
-  },
-
-  setAmend(amend: boolean) {
-    set({ amend });
-    if (amend) {
-      // Load last commit message
-      void (async () => {
-        try {
-          const result = (await bridge.request("getAmendMessage")) as {
-            message: string;
-          };
-          if (result?.message) {
-            set({ commitMessage: result.message });
-          }
-        } catch {
-          // ignore
-        }
-      })();
-    }
-  },
-
-  toggleFileSelection(key: string) {
-    const { selectedFiles } = get();
-    const next = new Set(selectedFiles);
-    if (next.has(key)) {
-      next.delete(key);
-    } else {
-      next.add(key);
-    }
-    set({ selectedFiles: next });
-  },
-
-  setFileKeys(keys: string[], selected: boolean) {
-    const { selectedFiles } = get();
-    const next = new Set(selectedFiles);
-    for (const key of keys) {
-      if (selected) {
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-    }
-    set({ selectedFiles: next });
-  },
-
-  selectAllFiles() {
-    const { changes } = get();
-    const allPaths = new Set(changes.map((f) => `${f.path}:${f.staged}`));
-    set({ selectedFiles: allPaths });
-  },
-
-  deselectAllFiles() {
-    set({ selectedFiles: new Set() });
-  },
-
-  highlightFile(key: string, mode: "single" | "toggle") {
-    const { highlightedFiles } = get();
-    if (mode === "single") {
-      set({ highlightedFiles: new Set([key]) });
-    } else {
-      // toggle (Cmd+click)
-      const next = new Set(highlightedFiles);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      set({ highlightedFiles: next });
-    }
-  },
-
-  async stageFile(filePath: string) {
-    try {
-      await bridge.request("stageFile", { filePath });
-      await get().fetchChanges();
-    } catch (err) {
-      console.error("stageFile failed:", err);
-    }
-  },
-
-  async unstageFile(filePath: string) {
-    try {
-      await bridge.request("unstageFile", { filePath });
-      await get().fetchChanges();
-    } catch (err) {
-      console.error("unstageFile failed:", err);
-    }
-  },
-
-  async stageAll() {
-    try {
-      await bridge.request("stageAll");
-      await get().fetchChanges();
-    } catch (err) {
-      console.error("stageAll failed:", err);
-    }
-  },
-
-  async unstageAll() {
-    try {
-      await bridge.request("unstageAll");
-      await get().fetchChanges();
-    } catch (err) {
-      console.error("unstageAll failed:", err);
-    }
-  },
-
-  async commit() {
-    const { commitMessage, amend, changes, selectedFiles } = get();
-    if (!commitMessage.trim()) return false;
-
-    const selections = changes
-      .filter((f) => selectedFiles.has(`${f.path}:${f.staged}`))
-      .map((f) => ({
-        path: f.path,
-        ...(f.oldPath ? { oldPath: f.oldPath } : {}),
-        status: f.status,
-        staged: f.staged,
-      }));
-
-    try {
-      set({ loading: true });
-      await bridge.request("commitChanges", {
-        message: commitMessage,
-        amend,
-        selections,
-      });
-      set({ commitMessage: "", amend: false });
-      await get().fetchChanges();
-      return true;
-    } catch (err) {
-      console.error("commit failed:", err);
-      return false;
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async commitAndPush() {
-    const { commitMessage, amend, changes, selectedFiles } = get();
-    if (!commitMessage.trim()) return false;
-
-    const selections = changes
-      .filter((f) => selectedFiles.has(`${f.path}:${f.staged}`))
-      .map((f) => ({
-        path: f.path,
-        ...(f.oldPath ? { oldPath: f.oldPath } : {}),
-        status: f.status,
-        staged: f.staged,
-      }));
-
-    try {
-      set({ loading: true });
-      await bridge.request("commitAndPush", {
-        message: commitMessage,
-        amend,
-        selections,
-      });
-      set({ commitMessage: "", amend: false });
-      await get().fetchChanges();
-      return true;
-    } catch (err) {
-      console.error("commitAndPush failed:", err);
-      return false;
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async rollbackFile(filePath: string) {
-    try {
-      await bridge.request("rollbackFile", { filePath });
-      await get().fetchChanges();
-    } catch (err) {
-      console.error("rollbackFile failed:", err);
-    }
-  },
-
-  async showDiff(filePath: string, staged?: boolean) {
-    try {
-      await bridge.request("showDiffForWorkingFile", { filePath, staged });
-    } catch (err) {
-      console.error("showDiff failed:", err);
-    }
-  },
-
-  async shelveChanges(message?: string, filePaths?: string[]) {
-    try {
-      set({ loading: true });
-      await bridge.request("shelveChanges", { message, filePaths });
-      await get().fetchChanges();
-      await get().fetchShelves();
-    } catch (err) {
-      console.error("shelveChanges failed:", err);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async unshelveChanges(stashId: string, drop = true) {
-    try {
-      set({ loading: true });
-      await bridge.request("unshelveChanges", { stashId, drop });
-      await get().fetchChanges();
-      await get().fetchShelves();
-    } catch (err) {
-      console.error("unshelveChanges failed:", err);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async deleteShelve(stashId: string) {
-    try {
-      await bridge.request("deleteShelve", { stashId });
-      await get().fetchShelves();
-    } catch (err) {
-      console.error("deleteShelve failed:", err);
-    }
-  },
-
-  async fetchIdeaShelves() {
-    try {
-      const result = (await bridge.request(
-        "getIdeaShelves",
-      )) as IdeaShelfEntry[];
-      if (Array.isArray(result)) {
-        set({ ideaShelves: result });
-      }
-    } catch (err) {
-      console.error("fetchIdeaShelves failed:", err);
-    }
-  },
-
-  async ideaShelveChanges(message?: string, filePaths?: string[]) {
-    try {
-      set({ loading: true });
-      await bridge.request("ideaShelveChanges", { message, filePaths });
-      await get().fetchChanges();
-      await get().fetchIdeaShelves();
-    } catch (err) {
-      console.error("ideaShelveChanges failed:", err);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async ideaUnshelveChanges(shelfName: string, drop = true) {
-    try {
-      set({ loading: true });
-      await bridge.request("ideaUnshelveChanges", { shelfName, drop });
-      await get().fetchChanges();
-      await get().fetchIdeaShelves();
-    } catch (err) {
-      console.error("ideaUnshelveChanges failed:", err);
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  async deleteIdeaShelf(shelfName: string) {
-    try {
-      await bridge.request("deleteIdeaShelf", { shelfName });
-      await get().fetchIdeaShelves();
-    } catch (err) {
-      console.error("deleteIdeaShelf failed:", err);
-    }
-  },
-
-  setActiveTab(tab: TabType) {
-    set({ activeTab: tab });
-    if (tab === "stash") {
-      get().fetchShelves();
-    } else if (tab === "shelf") {
-      get().fetchIdeaShelves();
-    }
-  },
-
-  toggleGroup(group: string) {
-    const { expandedGroups } = get();
-    const next = new Set(expandedGroups);
-    if (next.has(group)) {
-      next.delete(group);
-    } else {
-      next.add(group);
-    }
-    set({ expandedGroups: next });
-  },
-
-  toggleDir(dirPath: string) {
-    const { collapsedDirs } = get();
-    const next = new Set(collapsedDirs);
-    if (next.has(dirPath)) {
-      next.delete(dirPath);
-    } else {
-      next.add(dirPath);
-    }
-    set({ collapsedDirs: next });
-  },
-
-  expandAllDirs() {
-    set({ collapsedDirs: new Set() });
-  },
-
-  collapseAllDirs(allDirPaths: string[]) {
-    set({ collapsedDirs: new Set(allDirPaths) });
-  },
-
-  toggleGroupByDirectory() {
-    const next = !get().groupByDirectory;
-    // When toggling to directory mode, reset collapsed state so DirectoryTree will collapse all on mount
-    if (next) {
-      set({ groupByDirectory: true, collapsedDirs: new Set() });
-    } else {
-      set({ groupByDirectory: false, collapsedDirs: new Set() });
-    }
-  },
-
-  toggleShowUnversioned() {
-    set({ showUnversioned: !get().showUnversioned });
-  },
-
-  async refresh() {
-    await Promise.all([
-      get().fetchChanges(),
-      get().fetchShelves(),
-      get().fetchIdeaShelves(),
-    ]);
-  },
-}));
-
-// --- Per-repo draft isolation -------------------------------------------------
+coordinator.subscribePending((pending) => {
+  useCommitStore.setState({
+    pendingOperations: pending,
+    loading: pending > 0,
+  });
+});
 
 interface DraftSnapshot {
   commitMessage: string;
-  selectedFiles: Set<string>;
-  highlightedFiles: Set<string>;
   amend: boolean;
   expandedGroups: Set<string>;
   collapsedDirs: Set<string>;
@@ -501,53 +53,66 @@ interface DraftSnapshot {
 const drafts = new Map<string, DraftSnapshot>();
 
 function snapshotCurrent(): DraftSnapshot {
-  const s = useCommitStore.getState();
+  const state = useCommitStore.getState();
   return {
-    commitMessage: s.commitMessage,
-    selectedFiles: new Set(s.selectedFiles),
-    highlightedFiles: new Set(s.highlightedFiles),
-    amend: s.amend,
-    expandedGroups: new Set(s.expandedGroups),
-    collapsedDirs: new Set(s.collapsedDirs),
+    commitMessage: state.commitMessage,
+    amend: state.amend,
+    expandedGroups: new Set(state.expandedGroups),
+    collapsedDirs: new Set(state.collapsedDirs),
   };
 }
 
-/** Save outgoing draft, restore incoming (or reset), reload working tree. */
 export async function applyRepoSwitch(
   prevRepoId: string | null,
   nextRepoId: string | null,
   reload = true,
 ) {
   if (prevRepoId) drafts.set(prevRepoId, snapshotCurrent());
-  const snap = nextRepoId ? drafts.get(nextRepoId) : undefined;
+  coordinator.setRepository(nextRepoId);
+
+  const snapshot = nextRepoId ? drafts.get(nextRepoId) : undefined;
   useCommitStore.setState({
-    commitMessage: snap?.commitMessage ?? "",
+    commitMessage: snapshot?.commitMessage ?? "",
+    amend: snapshot?.amend ?? false,
+    expandedGroups: new Set(
+      snapshot?.expandedGroups ?? ["changes", "unversioned", "staged"],
+    ),
+    collapsedDirs: new Set(snapshot?.collapsedDirs ?? []),
     changes: [],
     shelves: [],
     ideaShelves: [],
-    selectedFiles: new Set(snap?.selectedFiles ?? []),
-    highlightedFiles: new Set(snap?.highlightedFiles ?? []),
-    amend: snap?.amend ?? false,
-    expandedGroups: new Set(
-      snap?.expandedGroups ?? ["changes", "unversioned", "staged"],
-    ),
-    collapsedDirs: new Set(snap?.collapsedDirs ?? []),
+    currentBranch: "",
+    currentBranchHasUpstream: false,
+    selectedFiles: new Set(),
+    highlightedFiles: new Set(),
   });
+
   if (nextRepoId && reload) await useCommitStore.getState().refresh();
 }
 
-/** Drop drafts for repos no longer present (called on reposChanged). */
 export function pruneRemovedDrafts(currentRepoIds: string[]) {
   const keep = new Set(currentRepoIds);
-  for (const id of drafts.keys()) if (!keep.has(id)) drafts.delete(id);
+  for (const id of drafts.keys()) {
+    if (!keep.has(id)) drafts.delete(id);
+  }
 }
 
-// Listen for commit state changes — refresh only when the event targets the
-// active repo OR carries no repoId (e.g. host refresh broadcasts scope:"all").
+function scheduleRepositoryRefresh() {
+  coordinator.scheduleRefresh("workingTree", () =>
+    useCommitStore.getState().refreshWorkingTree(),
+  );
+  coordinator.scheduleRefresh("refs", () =>
+    useCommitStore.getState().refreshRefs(),
+  );
+  coordinator.scheduleRefresh("shelves", () =>
+    useCommitStore.getState().refreshShelves(),
+  );
+}
+
 bridge.onEvent((event, data) => {
   if (event !== "commitStateChanged" && event !== "gitStateChanged") return;
   const { repoId } = data as { repoId?: string };
   if (!repoId || repoId === useRepoStore.getState().activeRepoId) {
-    void useCommitStore.getState().refresh();
+    scheduleRepositoryRefresh();
   }
 });
