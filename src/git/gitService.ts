@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { GitCache, type ReachabilityCacheEntry } from "./cache";
 import { CommitService } from "./commit/commitService";
 import { IndexTransaction } from "./commit/indexTransaction";
+import type { CommitPathSelection } from "./commit/types";
 import { GitExecutor } from "./core/gitExecutor";
 import type { GitOperationResult } from "./core/operationResult";
 import { BranchShiftError, BranchShiftErrorCode } from "./errors";
@@ -49,6 +50,8 @@ const LOG_FORMAT = [
 
 import { RefService } from "./refs/refService";
 import type { RepositoryPaths } from "./repoRegistry";
+import { NativeShelfService } from "./shelf/nativeShelfService";
+import { PatchShelfService } from "./shelf/patchShelfService";
 import { WorkingTreeService } from "./workingTree/workingTreeService";
 
 export class GitService {
@@ -59,15 +62,27 @@ export class GitService {
   private readonly refService: RefService;
   private readonly workingTreeService: WorkingTreeService;
   private readonly commitService: CommitService;
+  private readonly nativeShelfService: NativeShelfService;
+  private readonly patchShelfService: PatchShelfService;
 
   constructor(readonly paths: RepositoryPaths) {
     this.executor = new GitExecutor(paths.workTreeRoot);
     this.refService = new RefService(this.executor);
     this.workingTreeService = new WorkingTreeService(this.executor);
+    const indexTransaction = new IndexTransaction(this.executor);
     this.commitService = new CommitService(
       this.executor,
       this.workingTreeService,
-      new IndexTransaction(this.executor),
+      indexTransaction,
+    );
+    this.nativeShelfService = new NativeShelfService(
+      this.executor,
+      this.workingTreeService,
+      indexTransaction,
+    );
+    this.patchShelfService = new PatchShelfService(
+      this.executor,
+      this.workingTreeService,
     );
   }
 
@@ -1225,63 +1240,14 @@ export class GitService {
   }
 
   async shelveChanges(message: string, filePaths?: string[]): Promise<void> {
-    if (filePaths && filePaths.length > 0) {
-      // Strategy: to stash only specific files without pulling in other staged files,
-      // we need to temporarily reset the index, stage only our target files, then stash.
-
-      // 1. Save current index state by creating a temporary stash of the index
-      //    We use a different approach: reset index, add targets, stash, restore index.
-
-      // Get current status to know what's staged
-      const statusBefore = await this.execGit(["status", "--porcelain=v1"]);
-      const previouslyStaged: string[] = [];
-      for (const line of statusBefore.split("\n")) {
-        if (line.length < 4) continue;
-        const indexStatus = line[0];
-        if (indexStatus !== " " && indexStatus !== "?" && indexStatus !== "!") {
-          const rest = line.substring(3);
-          const arrowIdx = rest.indexOf(" -> ");
-          const filePath =
-            arrowIdx !== -1 ? rest.substring(arrowIdx + 4) : rest;
-          previouslyStaged.push(filePath);
-        }
-      }
-
-      // 2. Reset the index (unstage everything) without touching working tree
-      try {
-        await this.execGit(["reset", "HEAD"]);
-      } catch {
-        // May fail if there's no HEAD (initial commit) — that's ok
-      }
-
-      // 3. Stage only the target files
-      await this.execGit(["add", "--", ...filePaths]);
-
-      // 4. Stash only the staged files
-      await this.execGit([
-        "stash",
-        "push",
-        "--staged",
-        "-m",
-        message || "Shelved changes",
-      ]);
-
-      // 5. Re-stage previously staged files (that weren't stashed)
-      const remainingToStage = previouslyStaged.filter(
-        (f) => !filePaths.includes(f),
-      );
-      if (remainingToStage.length > 0) {
-        try {
-          await this.execGit(["add", "--", ...remainingToStage]);
-        } catch {
-          // Some files may no longer exist, ignore errors
-        }
-      }
-    } else {
-      // Stash all changes including untracked
-      const args = ["stash", "push", "-m", message || "Shelved changes", "-u"];
-      await this.execGit(args);
-    }
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.nativeShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
     this.invalidateCache();
   }
 
@@ -1398,47 +1364,14 @@ export class GitService {
     message: string,
     filePaths?: string[],
   ): Promise<void> {
-    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
-    await fs.mkdir(shelfDir, { recursive: true });
-
-    const sanitizedName = this.sanitizeShelfName(message || "Changes");
-    const uniqueName = await this.getUniqueShelfName(shelfDir, sanitizedName);
-
-    // Create shelf subdirectory
-    const entryDir = path.join(shelfDir, uniqueName);
-    await fs.mkdir(entryDir, { recursive: true });
-
-    // Generate patch
-    let patchContent = "";
-    if (filePaths && filePaths.length > 0) {
-      patchContent = await this.generatePatchForFiles(filePaths);
-    } else {
-      patchContent = await this.generatePatchAll();
-    }
-
-    if (!patchContent.trim()) {
-      // Clean up empty directory
-      await fs.rm(entryDir, { recursive: true, force: true });
-      throw new Error("No changes to shelve");
-    }
-
-    // Write patch file
-    const patchFilePath = path.join(entryDir, "shelved.patch");
-    await fs.writeFile(patchFilePath, patchContent, "utf-8");
-
-    // Write XML metadata
-    const timestamp = Date.now();
-    const xmlContent = `<changelist name="${this.escapeXml(uniqueName)}" date="${timestamp}" recycled="false">\n  <option name="PATH" value="$PROJECT_DIR$/.idea/shelf/${uniqueName}/shelved.patch" />\n  <option name="DESCRIPTION" value="${this.escapeXml(message || "")}" />\n</changelist>\n`;
-    const xmlPath = path.join(shelfDir, `${uniqueName}.xml`);
-    await fs.writeFile(xmlPath, xmlContent, "utf-8");
-
-    // Revert the files in working tree
-    if (filePaths && filePaths.length > 0) {
-      await this.revertFiles(filePaths);
-    } else {
-      await this.revertAllChanges();
-    }
-
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.patchShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
     this.invalidateCache();
   }
 
@@ -1540,154 +1473,27 @@ export class GitService {
     }
   }
 
-  private async generatePatchForFiles(filePaths: string[]): Promise<string> {
-    let patch = "";
-
-    // Separate tracked and untracked files
-    const tracked: string[] = [];
-    const untracked: string[] = [];
-
-    for (const filePath of filePaths) {
-      try {
-        await this.execGit(["ls-files", "--error-unmatch", filePath]);
-        tracked.push(filePath);
-      } catch {
-        untracked.push(filePath);
-      }
-    }
-
-    // Generate diff for tracked files (staged + unstaged)
-    if (tracked.length > 0) {
-      try {
-        const diff = await this.execGit(["diff", "HEAD", "--", ...tracked]);
-        patch += diff;
-      } catch {
-        // If HEAD doesn't exist (initial commit), diff against empty tree
-        try {
-          const diff = await this.execGit([
-            "diff",
-            "--cached",
-            "--",
-            ...tracked,
-          ]);
-          patch += diff;
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    // Generate patch for untracked files
-    for (const filePath of untracked) {
-      const fullPath = path.join(this.rootPath, filePath);
-      try {
-        const content = await fs.readFile(fullPath, "utf-8");
-        const lines = content.split("\n");
-        patch += `diff --git a/${filePath} b/${filePath}\n`;
-        patch += "new file mode 100644\n";
-        patch += "--- /dev/null\n";
-        patch += `+++ b/${filePath}\n`;
-        patch += `@@ -0,0 +1,${lines.length} @@\n`;
-        for (const line of lines) {
-          patch += `+${line}\n`;
-        }
-      } catch {
-        // skip files that can't be read
-      }
-    }
-
-    return patch;
+  private async resolveShelfPaths(
+    filePaths: readonly string[],
+  ): Promise<CommitPathSelection[]> {
+    const changes = await this.workingTreeService.getWorkingTreeChanges();
+    return filePaths.map((filePath) => {
+      const matching = changes.filter(
+        (change) => change.path === filePath || change.oldPath === filePath,
+      );
+      const oldPath = matching.find((change) => change.oldPath)?.oldPath;
+      return {
+        path: filePath,
+        ...(oldPath ? { oldPath } : {}),
+        includeIndex: matching.some((change) => change.staged),
+        includeWorkingTree: matching.some((change) => !change.staged),
+      };
+    });
   }
 
-  private async generatePatchAll(): Promise<string> {
-    let patch = "";
-
-    // Get diff for all tracked changes
-    try {
-      const diff = await this.execGit(["diff", "HEAD"]);
-      patch += diff;
-    } catch {
-      try {
-        const diff = await this.execGit(["diff", "--cached"]);
-        patch += diff;
-      } catch {
-        // ignore
-      }
-    }
-
-    // Get untracked files
-    try {
-      const untrackedOutput = await this.execGit([
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-      ]);
-      const untrackedFiles = untrackedOutput.trim().split("\n").filter(Boolean);
-
-      for (const filePath of untrackedFiles) {
-        const fullPath = path.join(this.rootPath, filePath);
-        try {
-          const content = await fs.readFile(fullPath, "utf-8");
-          const lines = content.split("\n");
-          patch += `diff --git a/${filePath} b/${filePath}\n`;
-          patch += "new file mode 100644\n";
-          patch += "--- /dev/null\n";
-          patch += `+++ b/${filePath}\n`;
-          patch += `@@ -0,0 +1,${lines.length} @@\n`;
-          for (const line of lines) {
-            patch += `+${line}\n`;
-          }
-        } catch {
-          // skip binary or unreadable files
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    return patch;
-  }
-
-  private async revertFiles(filePaths: string[]): Promise<void> {
-    for (const filePath of filePaths) {
-      try {
-        await this.execGit(["ls-files", "--error-unmatch", filePath]);
-        // Tracked file: checkout from HEAD
-        await this.execGit(["checkout", "HEAD", "--", filePath]);
-      } catch {
-        // Untracked file: delete it
-        const fullPath = path.join(this.rootPath, filePath);
-        try {
-          await fs.unlink(fullPath);
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }
-
-  private async revertAllChanges(): Promise<void> {
-    // Reset tracked files
-    try {
-      await this.execGit(["checkout", "HEAD", "--", "."]);
-    } catch {
-      // ignore (e.g. no HEAD yet)
-    }
-    // Remove untracked files
-    try {
-      await this.execGit(["clean", "-fd"]);
-    } catch {
-      // ignore
-    }
-  }
-
-  private escapeXml(str: string): string {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+  private unwrapShelfResult<T>(result: GitOperationResult<T>): T {
+    if (result.ok) return result.value;
+    throw new BranchShiftError(result.code, result.message, result.recovery);
   }
 
   invalidateCache(pattern?: string): void {
