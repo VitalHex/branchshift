@@ -173,32 +173,36 @@ export function PushApp() {
   // stable wrapper that delegates to the latest `loadRepo` via the ref, so
   // `loadRepo` can be defined AFTER the hook (and thus use its `request`).
   const loadRepoRef = useRef<(() => Promise<void>) | null>(null);
+  const clearRepositoryState = useCallback(() => {
+    setBranchName("");
+    setTargetBranch("");
+    setTargetRemote("origin");
+    targetRef.current = { remote: "origin", branch: "" };
+    setCommits([]);
+    selectedHashRef.current = null;
+    setSelectedHash(null);
+    setFiles([]);
+    setSelectorOpen(false);
+    setShowPushMenu(false);
+    setCollapsed({});
+    setError(null);
+  }, []);
   const onFollowRepo = useCallback(
     (repoId: string | null) => {
       advanceRequestRepository(repoId);
+      clearRepositoryState();
       // When every repo is removed, the host broadcasts
       // activeRepoChanged{repo:null}. Don't issue a repo-bound request (there is
       // no repo to bind to); clear the displayed state instead. Otherwise the
       // bound `request` would carry repoId=undefined and the host's strict-repo
       // guard would reject it as REPO_NOT_FOUND.
-      if (repoId === null) {
-        setBranchName("");
-        setTargetBranch("");
-        setTargetRemote("origin");
-        targetRef.current = { remote: "origin", branch: "" };
-        setCommits([]);
-        selectedHashRef.current = null;
-        setSelectedHash(null);
-        setFiles([]);
-        setSelectorOpen(false);
-        return;
-      }
+      if (repoId === null) return;
       // Delegate to the latest loadRepo; no-op if it hasn't been assigned yet.
       // The repoId is ignored here because the bound `request` already carries
       // the authoritative repo (the hook bumped bridge context before calling).
       return loadRepoRef.current?.();
     },
-    [advanceRequestRepository],
+    [advanceRequestRepository, clearRepositoryState],
   );
 
   // Authoritative repo binding + bound request. The busy flag includes the

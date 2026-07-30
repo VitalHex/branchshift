@@ -743,6 +743,84 @@ describe("PushApp request ordering", () => {
     });
   });
 
+  it("clears the previous repository while the next repository is loading", async () => {
+    seedRoot({
+      repoId: "A",
+      repoName: "first",
+      branch: "main",
+      remote: "origin",
+    });
+    const nextBranches =
+      deferred<
+        {
+          name: string;
+          fullRef: string;
+          isRemote: boolean;
+          isCurrent: boolean;
+          isFavorite: boolean;
+          upstream: string;
+          ahead: number;
+          behind: number;
+          lastCommitHash: string;
+        }[]
+      >();
+    let aheadCall = 0;
+
+    responders.getAheadCommits = () => {
+      aheadCall += 1;
+      return aheadCall === 1
+        ? { commits: [commit("old", "Previous repository commit")] }
+        : { commits: [] };
+    };
+    responders.getCommitRangeFiles = () => [];
+    responders.getBranches = () => nextBranches.promise;
+
+    render(<PushApp />);
+
+    await waitFor(() => {
+      expect(
+        (document.querySelector(".push-split-main") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+
+    act(() => {
+      emit("activeRepoChanged", {
+        repo: { id: "B" },
+        repoName: "second",
+      });
+    });
+
+    await waitFor(() => {
+      expect(lastCall("getBranches")?.[2]).toMatchObject({ repoId: "B" });
+    });
+
+    expect(document.body.textContent).not.toContain(
+      "Previous repository commit",
+    );
+    expect(
+      (document.querySelector(".push-split-main") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    await act(async () => {
+      nextBranches.resolve([
+        {
+          name: "main",
+          fullRef: "refs/heads/main",
+          isRemote: false,
+          isCurrent: true,
+          isFavorite: false,
+          upstream: "origin/main",
+          ahead: 0,
+          behind: 0,
+          lastCommitHash: "new",
+        },
+      ]);
+      await nextBranches.promise;
+    });
+  });
+
   it("loads remote branch choices through the current repository binding", async () => {
     seedRoot({ repoId: "A", branch: "main", remote: "origin" });
     responders.getAheadCommits = () => ({ commits: [] });
