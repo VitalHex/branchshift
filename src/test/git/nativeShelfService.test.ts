@@ -233,4 +233,52 @@ describe("NativeShelfService", () => {
       workspaceBefore,
     );
   });
+
+  it("reports an unknown changed state when reference verification fails after stash creation", async () => {
+    const repo = await createRepo();
+    await commitFiles(repo, { "selected.txt": "selected base\n" });
+    await repo.writeFile("selected.txt", "selected shelf\n");
+    const indexBefore = await rawIndex(repo);
+
+    class FailingPostStashRefExecutor extends GitExecutor {
+      private refReads = 0;
+
+      override buffer(
+        args: readonly string[],
+        options?: GitRunOptions,
+      ): Promise<Buffer> {
+        if (
+          args[0] === "rev-parse" &&
+          args[1] === "--verify" &&
+          args[2] === "refs/stash"
+        ) {
+          this.refReads++;
+          if (this.refReads === 2) {
+            return Promise.reject(
+              new Error("injected reference verification failure"),
+            );
+          }
+        }
+        return super.buffer(args, options);
+      }
+    }
+    const result = await service(
+      repo,
+      new FailingPostStashRefExecutor(repo.rootPath),
+    ).create({
+      message: "selected",
+      selections: [selectedWorkspace("selected.txt")],
+    });
+
+    assert.strictEqual(result.ok, false);
+    if (result.ok) assert.fail("expected a typed failure");
+    assert.match(result.message, /state may have changed/i);
+    assert.match(result.recovery ?? "", /git stash list/);
+    assert.deepStrictEqual(await rawIndex(repo), indexBefore);
+    assert.strictEqual(
+      await fs.readFile(path.join(repo.rootPath, "selected.txt"), "utf8"),
+      "selected base\n",
+    );
+    assert.ok((await repo.git("rev-parse", "--verify", "refs/stash")).trim());
+  });
 });

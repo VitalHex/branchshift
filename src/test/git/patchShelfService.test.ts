@@ -183,7 +183,7 @@ describe("PatchShelfService", () => {
       selections: [wholePath("tracked.bin")],
     });
 
-    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.ok, true, result.ok ? undefined : result.message);
     if (!result.ok) assert.fail("expected a shelf artifact");
     assert.deepStrictEqual(
       await fs.readFile(path.join(repo.rootPath, "tracked.bin")),
@@ -212,7 +212,7 @@ describe("PatchShelfService", () => {
       ],
     });
 
-    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.ok, true, result.ok ? undefined : result.message);
     if (!result.ok) assert.fail("expected a shelf artifact");
     await assert.rejects(fs.access(path.join(repo.rootPath, "initial.txt")));
     await repo.git("apply", result.value.finalPath);
@@ -293,14 +293,165 @@ describe("PatchShelfService", () => {
     );
   });
 
+  it("removes an index-only selection without changing the working-tree bytes", async () => {
+    const repo = await createRepo();
+    await commitFiles(repo, { "staged.txt": "base\n" });
+    await repo.writeFile("staged.txt", "staged\n");
+    await repo.git("add", "--", "staged.txt");
+    const workspaceBefore = await fs.readFile(
+      path.join(repo.rootPath, "staged.txt"),
+    );
+
+    const result = await service(repo).create({
+      message: "index only",
+      selections: [
+        wholePath("staged.txt", {
+          includeIndex: true,
+          includeWorkingTree: false,
+        }),
+      ],
+    });
+
+    assert.strictEqual(result.ok, true);
+    if (!result.ok) assert.fail("expected a shelf artifact");
+    assert.deepStrictEqual(
+      await fs.readFile(path.join(repo.rootPath, "staged.txt")),
+      workspaceBefore,
+    );
+    assert.strictEqual(await repo.git("diff", "--cached", "--name-only"), "");
+    assert.strictEqual(
+      await repo.git("diff", "--name-only", "--", "staged.txt"),
+      "staged.txt\n",
+    );
+    await fs.access(result.value.finalPath);
+  });
+
+  it("fails closed when staged-only content differs from unselected working-tree content", async () => {
+    const repo = await createRepo();
+    await commitFiles(repo, { "partial.txt": "base\n" });
+    await repo.writeFile("partial.txt", "staged\n");
+    await repo.git("add", "--", "partial.txt");
+    await repo.writeFile("partial.txt", "workspace\n");
+    const indexBefore = await rawIndex(repo);
+    const workspaceBefore = await fs.readFile(
+      path.join(repo.rootPath, "partial.txt"),
+    );
+
+    const result = await service(repo).create({
+      message: "different layers",
+      selections: [
+        wholePath("partial.txt", {
+          includeIndex: true,
+          includeWorkingTree: false,
+        }),
+      ],
+    });
+
+    assert.strictEqual(result.ok, false);
+    if (result.ok) assert.fail("expected a typed failure");
+    assert.strictEqual(result.code, "UNSUPPORTED_SHELF_CONTENT");
+    assert.deepStrictEqual(await rawIndex(repo), indexBefore);
+    assert.deepStrictEqual(
+      await fs.readFile(path.join(repo.rootPath, "partial.txt")),
+      workspaceBefore,
+    );
+  });
+
+  it("preserves exact old and new identities for a special-path rename", async () => {
+    const repo = await createRepo();
+    const oldPath = 'old name\t"quoted".txt';
+    const newPath = 'new name\t"quoted".txt';
+    await commitFiles(repo, { [oldPath]: "rename content\n" });
+    await fs.rename(
+      path.join(repo.rootPath, oldPath),
+      path.join(repo.rootPath, newPath),
+    );
+    await repo.git("add", "-A");
+
+    const result = await service(repo).create({
+      message: "special rename",
+      selections: [
+        wholePath(newPath, {
+          oldPath,
+          includeIndex: true,
+          includeWorkingTree: false,
+        }),
+      ],
+    });
+
+    assert.strictEqual(result.ok, true, result.ok ? undefined : result.message);
+    if (!result.ok) assert.fail("expected a shelf artifact");
+    assert.deepStrictEqual(result.value.pathIdentities, [
+      { oldPath, path: newPath },
+    ]);
+    assert.strictEqual(
+      await fs.readFile(path.join(repo.rootPath, newPath), "utf8"),
+      "rename content\n",
+    );
+  });
+
+  it("rejects a rename artifact with the wrong old-path identity", async () => {
+    const repo = await createRepo();
+    const oldPath = "old-name.txt";
+    const newPath = "new-name.txt";
+    await commitFiles(repo, { [oldPath]: "rename content\n" });
+    await fs.rename(
+      path.join(repo.rootPath, oldPath),
+      path.join(repo.rootPath, newPath),
+    );
+    await repo.git("add", "-A");
+    const indexBefore = await rawIndex(repo);
+
+    class WrongOldPathExecutor extends GitExecutor {
+      override async buffer(
+        args: readonly string[],
+        options?: GitRunOptions,
+      ): Promise<Buffer> {
+        const output = await super.buffer(args, options);
+        if (args[0] === "diff" && args.includes("-M")) {
+          return Buffer.from(
+            output
+              .toString()
+              .replace("rename from old-name.txt", "rename from wrong-old.txt"),
+          );
+        }
+        return output;
+      }
+    }
+    const result = await service(
+      repo,
+      new WrongOldPathExecutor(repo.rootPath),
+    ).create({
+      message: "wrong identity",
+      selections: [
+        wholePath(newPath, {
+          oldPath,
+          includeIndex: true,
+          includeWorkingTree: false,
+        }),
+      ],
+    });
+
+    assert.strictEqual(result.ok, false);
+    if (result.ok) assert.fail("expected a typed failure");
+    assert.strictEqual(result.code, "UNSUPPORTED_SHELF_CONTENT");
+    assert.deepStrictEqual(await rawIndex(repo), indexBefore);
+    assert.strictEqual(
+      await fs.readFile(path.join(repo.rootPath, newPath), "utf8"),
+      "rename content\n",
+    );
+  });
+
   it("restores already reverted paths after mutation failure and retains recovery artifact", async () => {
     const repo = await createRepo();
     await commitFiles(repo, {
       "first.txt": "first base\n",
+      "middle.txt": "middle base\n",
       "second.txt": "second base\n",
     });
     await repo.writeFile("first.txt", "first changed\n");
-    await repo.git("add", "--", "first.txt");
+    await repo.writeFile("middle.txt", "middle changed\n");
+    await repo.git("add", "--", "middle.txt");
     await repo.writeFile("second.txt", "second changed\n");
     const indexBefore = await rawIndex(repo);
 
@@ -327,7 +478,8 @@ describe("PatchShelfService", () => {
     ).create({
       message: "mutation recovery",
       selections: [
-        wholePath("first.txt", {
+        wholePath("first.txt"),
+        wholePath("middle.txt", {
           includeIndex: true,
           includeWorkingTree: false,
         }),
@@ -344,6 +496,10 @@ describe("PatchShelfService", () => {
     assert.strictEqual(
       await fs.readFile(path.join(repo.rootPath, "first.txt"), "utf8"),
       "first changed\n",
+    );
+    assert.strictEqual(
+      await fs.readFile(path.join(repo.rootPath, "middle.txt"), "utf8"),
+      "middle changed\n",
     );
     assert.strictEqual(
       await fs.readFile(path.join(repo.rootPath, "second.txt"), "utf8"),

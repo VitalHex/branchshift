@@ -27,6 +27,7 @@ export class NativeShelfService {
     if (validation) return validation;
 
     let createdRef: string | undefined;
+    let postCommandVerificationFailed = false;
     try {
       const before = await this.stashRef();
       const operation = async () => {
@@ -37,7 +38,13 @@ export class NativeShelfService {
           "-m",
           request.message.trim() || "Shelved changes",
         ]);
-        const after = await this.stashRef();
+        let after: string | undefined;
+        try {
+          after = await this.stashRef();
+        } catch (error) {
+          postCommandVerificationFailed = true;
+          throw error;
+        }
         if (!after || after === before) {
           throw new BranchShiftError(
             BranchShiftErrorCode.UNSUPPORTED_SHELF_CONTENT,
@@ -58,6 +65,14 @@ export class NativeShelfService {
       }
       return { ok: true, value: undefined };
     } catch (error) {
+      if (postCommandVerificationFailed) {
+        return this.failure(
+          BranchShiftErrorCode.UNSUPPORTED_SHELF_CONTENT,
+          "The shelf command completed, but its reference could not be verified; repository state may have changed.",
+          "Do not retry or discard files yet. Run git stash list, inspect the index and working tree, then apply or pop the matching stash if the selected changes are no longer present.",
+          error,
+        );
+      }
       if (error instanceof BranchShiftError) {
         const recovery =
           error.code === BranchShiftErrorCode.INDEX_RESTORE_FAILED && createdRef

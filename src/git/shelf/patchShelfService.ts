@@ -67,6 +67,12 @@ export class PatchShelfService {
         temporaryPath,
         finalPath,
         paths: selections.map((selection) => selection.path).sort(),
+        pathIdentities: selections
+          .map((selection) => ({
+            path: selection.path,
+            ...(selection.oldPath ? { oldPath: selection.oldPath } : {}),
+          }))
+          .sort((left, right) => left.path.localeCompare(right.path)),
       };
 
       const patch = await this.materialize(selections);
@@ -322,6 +328,7 @@ export class PatchShelfService {
           "diff",
           "--binary",
           "--full-index",
+          "-M",
           "--cached",
           "--",
           ...paths,
@@ -331,6 +338,7 @@ export class PatchShelfService {
           "diff",
           "--binary",
           "--full-index",
+          "-M",
           "HEAD",
           "--",
           ...paths,
@@ -371,6 +379,10 @@ export class PatchShelfService {
           const paths = [selection.oldPath, selection.path].filter(
             (value): value is string => value !== undefined,
           );
+          if (selection.includeIndex && !selection.includeWorkingTree) {
+            await this.revertIndexPaths(paths);
+            continue;
+          }
           for (const relativePath of paths) {
             if (changed.includes(relativePath)) continue;
             await this.revertPath(relativePath);
@@ -403,6 +415,20 @@ export class PatchShelfService {
         error,
       );
     }
+  }
+
+  private async revertIndexPaths(paths: readonly string[]): Promise<void> {
+    const head = await this.git.buffer(["rev-parse", "--verify", "HEAD"], {
+      allowedExitCodes: [0, 128],
+    });
+    if (head.length > 0) {
+      await this.git.buffer(["reset", "--quiet", "HEAD", "--", ...paths]);
+      return;
+    }
+    await this.git.withInput(
+      ["update-index", "--force-remove", "-z", "--stdin"],
+      Buffer.from(`${paths.join("\0")}\0`),
+    );
   }
 
   private async revertPath(relativePath: string): Promise<void> {
