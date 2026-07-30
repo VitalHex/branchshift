@@ -285,15 +285,15 @@ function tagsToFlatTree(tags: TagInfo[]): TreeNode[] {
 // ---------------------------------------------------------------------------
 
 function collectVisibleRefs(
-  nodes: (TreeNode | BranchTreeNode)[],
+  nodes: readonly (TreeNode | BranchTreeNode)[],
   collapsed: Record<string, boolean>,
   groupPrefix: string,
 ): GitRefIdentity[] {
   const result: GitRefIdentity[] = [];
   for (const node of nodes) {
-    if (node.isLeaf && node.branch) {
+    if (node.isLeaf && "branch" in node && node.branch) {
       result.push(branchIdentity(node.branch));
-    } else if (node.isLeaf && node.tag) {
+    } else if (node.isLeaf && "tag" in node && node.tag) {
       result.push(tagIdentity(node.tag));
     } else {
       const collapseKey =

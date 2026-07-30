@@ -20,11 +20,14 @@ export class RequestCoordinator {
   private pending = 0;
   private readonly pendingListeners = new Set<(pending: number) => void>();
   private readonly refreshStates = new Map<string, RefreshState>();
+  private readonly onRefreshError: (error: unknown) => void;
 
   constructor(
-    private readonly onRefreshError: (error: unknown) => void = (error) =>
+    onRefreshError: (error: unknown) => void = (error) =>
       console.error("Refresh request failed", error),
-  ) {}
+  ) {
+    this.onRefreshError = onRefreshError;
+  }
 
   setRepository(repoId: string | null): number {
     if (repoId === this.repositoryId) return this.generation;
