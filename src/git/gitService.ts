@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -267,9 +268,47 @@ export class GitService {
   }
 
   protected loadReachableHashes(tip: string): Promise<Set<string>> {
-    return this.execGit(["rev-list", tip]).then(
-      (output) => new Set(output.split("\n").filter(Boolean)),
-    );
+    return new Promise((resolve, reject) => {
+      const hashes = new Set<string>();
+      let remainder = "";
+      let stderr = "";
+      const child = spawn("git", ["rev-list", tip], {
+        cwd: this.rootPath,
+        env: {
+          ...process.env,
+          LC_ALL: "C",
+          GIT_TERMINAL_PROMPT: "0",
+        },
+      });
+
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        const lines = `${remainder}${chunk}`.split("\n");
+        remainder = lines.pop() ?? "";
+        for (const line of lines) {
+          const hash = line.trim();
+          if (hash) hashes.add(hash);
+        }
+      });
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      child.once("error", reject);
+      child.once("close", (code) => {
+        const finalHash = remainder.trim();
+        if (finalHash) hashes.add(finalHash);
+        if (code === 0) {
+          resolve(hashes);
+          return;
+        }
+        reject(
+          new Error(
+            stderr.trim() || `git rev-list exited with status ${String(code)}`,
+          ),
+        );
+      });
+    });
   }
 
   async getBranches(): Promise<BranchInfo[]> {
@@ -613,7 +652,7 @@ export class GitService {
 
   async cherryPickAction(action: "continue" | "abort" | "skip"): Promise<void> {
     if (action === "continue") {
-      // Stage all resolved files before continuing (like IntelliJ IDEA behavior)
+      // Stage all resolved files before continuing.
       await this.execGit(["add", "-u"]);
       // Use --allow-empty to handle the case where cherry-pick becomes empty after conflict resolution
       try {

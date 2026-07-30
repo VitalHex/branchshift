@@ -1,5 +1,6 @@
 import * as assert from "node:assert";
 import type * as vscode from "vscode";
+import { BranchShiftError, BranchShiftErrorCode } from "../../git/errors";
 import { GitService } from "../../git/gitService";
 import {
   type CommandHandler,
@@ -26,6 +27,26 @@ interface RouterWithHandleRequest {
 }
 
 describe("MessageRouter repo context", () => {
+  it("preserves an explicitly empty BranchShift recovery message", async () => {
+    const router = new MessageRouter();
+    router.handle("getStatus", async () => {
+      throw new BranchShiftError(
+        BranchShiftErrorCode.COMMIT_REJECTED,
+        "nope",
+        "",
+      );
+    });
+    const responses: ResponseMessage[] = [];
+    const webview = fakeWebview((message) => responses.push(message));
+
+    await (router as unknown as RouterWithHandleRequest).handleRequest(
+      webview,
+      { type: "request", id: "recovery", command: "getStatus", params: {} },
+    );
+
+    assert.strictEqual(responses[0].error?.recovery, "");
+  });
+
   it("resolves and passes RequestContext to handler", async () => {
     const router = new MessageRouter();
     const paths = {

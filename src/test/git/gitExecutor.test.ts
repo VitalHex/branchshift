@@ -1,5 +1,8 @@
 import * as assert from "node:assert";
-import { GitCommandError } from "../../git/core/gitExecutor";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { GitCommandError, GitExecutor } from "../../git/core/gitExecutor";
 import { GitTestRepo } from "./gitTestRepo";
 
 describe("GitExecutor", () => {
@@ -91,6 +94,19 @@ describe("GitExecutor", () => {
 
     await assert.rejects(() =>
       repo.executor.buffer(["show", "HEAD:large.txt"], { maxBuffer: 8 }),
+    );
+  });
+
+  it("counts stderr against the configured input-command buffer", async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), "branchshift-bin-"));
+    const git = path.join(bin, "git");
+    await fs.writeFile(git, "#!/bin/sh\nprintf '0123456789abcdef' >&2\n");
+    await fs.chmod(git, 0o755);
+    const executor = new GitExecutor(bin);
+
+    await assert.rejects(
+      () => executor.withInput([], "", { env: { PATH: bin }, maxBuffer: 8 }),
+      /maxBuffer/,
     );
   });
 });

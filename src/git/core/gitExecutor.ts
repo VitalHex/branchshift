@@ -66,20 +66,30 @@ export class GitExecutor {
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
       let outputLength = 0;
+      let settled = false;
       const maxBuffer = options?.maxBuffer ?? 1024 * 1024;
 
-      child.stdout.on("data", (chunk: Buffer) => {
+      const addOutput = (chunk: Buffer, target: Buffer[]) => {
         outputLength += chunk.length;
         if (outputLength > maxBuffer) {
+          if (settled) return;
+          settled = true;
           child.kill();
           reject(new RangeError("Git output exceeds maxBuffer"));
           return;
         }
-        stdout.push(chunk);
+        target.push(chunk);
+      };
+      child.stdout.on("data", (chunk: Buffer) => addOutput(chunk, stdout));
+      child.stderr.on("data", (chunk: Buffer) => addOutput(chunk, stderr));
+      child.once("error", (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
       });
-      child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-      child.once("error", reject);
       child.once("close", (exitCode) => {
+        if (settled) return;
+        settled = true;
         const code = exitCode ?? -1;
         if (this.allowed(options).includes(code)) {
           resolve(Buffer.concat(stdout));
