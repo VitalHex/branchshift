@@ -21,6 +21,11 @@ export class RequestCoordinator {
   private readonly pendingListeners = new Set<(pending: number) => void>();
   private readonly refreshStates = new Map<string, RefreshState>();
 
+  constructor(
+    private readonly onRefreshError: (error: unknown) => void = (error) =>
+      console.error("Refresh request failed", error),
+  ) {}
+
   setRepository(repoId: string | null): number {
     if (repoId === this.repositoryId) return this.generation;
 
@@ -103,6 +108,8 @@ export class RequestCoordinator {
     state.running = true;
     try {
       await state.refresh();
+    } catch (error) {
+      this.onRefreshError(error);
     } finally {
       state.running = false;
       if (state.dirty) {

@@ -167,4 +167,32 @@ describe("RequestCoordinator", () => {
     expect(refresh).toHaveBeenCalledTimes(2);
     expect(pending).toEqual([1, 2, 1, 0]);
   });
+
+  it("reports refresh failures while draining pending work and a dirty follow-up", async () => {
+    const failures: unknown[] = [];
+    const coordinator = new RequestCoordinator((error) => failures.push(error));
+    const firstRun = deferred<void>();
+    const secondRun = deferred<void>();
+    const pending: number[] = [];
+    coordinator.subscribePending((count) => pending.push(count));
+    const refresh = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => firstRun.promise)
+      .mockImplementationOnce(() => secondRun.promise);
+
+    coordinator.scheduleRefresh("history", refresh);
+    await flushMicrotasks();
+    coordinator.scheduleRefresh("history", refresh);
+
+    const failure = new Error("refresh failed");
+    firstRun.reject(failure);
+    await flushMicrotasks();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    secondRun.resolve();
+    await flushMicrotasks();
+
+    expect(failures).toEqual([failure]);
+    expect(pending).toEqual([1, 2, 1, 0]);
+  });
 });
