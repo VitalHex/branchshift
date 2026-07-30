@@ -1,9 +1,8 @@
-import { execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { promisify } from "node:util";
 import { GitCache, type ReachabilityCacheEntry } from "./cache";
+import { GitExecutor } from "./core/gitExecutor";
 import { BranchShiftError, BranchShiftErrorCode } from "./errors";
 import { computeGraphLayout } from "./graphLayout";
 import type {
@@ -21,8 +20,6 @@ import type {
   RefInfo,
   TagInfo,
 } from "./types";
-
-const execFileAsync = promisify(execFile);
 
 // For parsing git output (actual null byte)
 const FIELD_SEP = "\x00";
@@ -52,7 +49,11 @@ export class GitService {
   readonly cache = new GitCache();
   private reachabilityCache: ReachabilityCacheEntry | null = null;
 
-  constructor(readonly paths: RepositoryPaths) {}
+  private readonly executor: GitExecutor;
+
+  constructor(readonly paths: RepositoryPaths) {
+    this.executor = new GitExecutor(paths.workTreeRoot);
+  }
 
   get rootPath(): string {
     return this.paths.workTreeRoot;
@@ -62,16 +63,7 @@ export class GitService {
     args: string[],
     maxBuffer = MAX_BUFFER,
   ): Promise<string> {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd: this.rootPath,
-      maxBuffer,
-      env: {
-        ...process.env,
-        LC_ALL: "C",
-        GIT_TERMINAL_PROMPT: "0",
-      },
-    });
-    return stdout;
+    return this.executor.text(args, { maxBuffer });
   }
 
   async checkGitAvailable(): Promise<boolean> {
@@ -275,47 +267,9 @@ export class GitService {
   }
 
   protected loadReachableHashes(tip: string): Promise<Set<string>> {
-    return new Promise((resolve, reject) => {
-      const hashes = new Set<string>();
-      let remainder = "";
-      let stderr = "";
-      const child = spawn("git", ["rev-list", tip], {
-        cwd: this.rootPath,
-        env: {
-          ...process.env,
-          LC_ALL: "C",
-          GIT_TERMINAL_PROMPT: "0",
-        },
-      });
-
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        const lines = `${remainder}${chunk}`.split("\n");
-        remainder = lines.pop() ?? "";
-        for (const line of lines) {
-          const hash = line.trim();
-          if (hash) hashes.add(hash);
-        }
-      });
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
-      });
-      child.once("error", reject);
-      child.once("close", (code) => {
-        const finalHash = remainder.trim();
-        if (finalHash) hashes.add(finalHash);
-        if (code === 0) {
-          resolve(hashes);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `git rev-list exited with status ${String(code)}`,
-          ),
-        );
-      });
-    });
+    return this.execGit(["rev-list", tip]).then(
+      (output) => new Set(output.split("\n").filter(Boolean)),
+    );
   }
 
   async getBranches(): Promise<BranchInfo[]> {
@@ -526,21 +480,9 @@ export class GitService {
       return Buffer.alloc(0);
     }
     try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["show", `${ref}:${filePath}`],
-        {
-          cwd: this.rootPath,
-          maxBuffer: MAX_BUFFER,
-          encoding: "buffer",
-          env: {
-            ...process.env,
-            LC_ALL: "C",
-            GIT_TERMINAL_PROMPT: "0",
-          },
-        },
-      );
-      return stdout;
+      return await this.executor.buffer(["show", `${ref}:${filePath}`], {
+        maxBuffer: MAX_BUFFER,
+      });
     } catch {
       return Buffer.alloc(0);
     }

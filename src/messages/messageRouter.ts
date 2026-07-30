@@ -137,6 +137,9 @@ export class MessageRouter {
             ? (err.code as ErrorCode)
             : ErrorCode.UNKNOWN,
         message,
+        ...(err instanceof BranchShiftError && err.recovery
+          ? { recovery: err.recovery }
+          : {}),
       });
     }
   }
@@ -146,7 +149,7 @@ export class MessageRouter {
     id: string,
     success: boolean,
     data?: unknown,
-    error?: { code: ErrorCode; message: string },
+    error?: { code: ErrorCode; message: string; recovery?: string },
   ): void {
     const response: ResponseMessage = {
       type: "response",

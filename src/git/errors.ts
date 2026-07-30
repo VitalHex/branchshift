@@ -5,6 +5,13 @@ export const BranchShiftErrorCode = {
   BRANCH_NO_UPSTREAM: "BRANCH_NO_UPSTREAM",
   BRANCH_CHECKED_OUT_IN_WORKTREE: "BRANCH_CHECKED_OUT_IN_WORKTREE",
   BRANCH_NON_FAST_FORWARD: "BRANCH_NON_FAST_FORWARD",
+  UNMERGED_PATHS: "UNMERGED_PATHS",
+  INDEX_PREPARE_FAILED: "INDEX_PREPARE_FAILED",
+  INDEX_RESTORE_FAILED: "INDEX_RESTORE_FAILED",
+  PARTIAL_FILE_SELECTION_UNSUPPORTED: "PARTIAL_FILE_SELECTION_UNSUPPORTED",
+  UNSUPPORTED_SHELF_CONTENT: "UNSUPPORTED_SHELF_CONTENT",
+  COMMIT_REJECTED: "COMMIT_REJECTED",
+  OPERATION_CANCELLED: "OPERATION_CANCELLED",
 } as const;
 
 export type BranchShiftErrorCode =
@@ -14,6 +21,7 @@ export class BranchShiftError extends Error {
   constructor(
     readonly code: BranchShiftErrorCode,
     message: string,
+    readonly recovery?: string,
   ) {
     super(message);
     this.name = "BranchShiftError";

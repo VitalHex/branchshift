@@ -55,7 +55,7 @@ export interface ResponseMessage {
   id: string;
   success: boolean;
   data?: unknown;
-  error?: { code: string; message: string };
+  error?: { code: string; message: string; recovery?: string };
 }
 
 export interface EventMessage {
