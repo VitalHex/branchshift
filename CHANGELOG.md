@@ -9,6 +9,7 @@
 - **Index and shelf safety** — protected the index during selected operations, preserved unrelated staged changes, and rejected unsafe shelf mutations before changing repository state / 选定操作期间保护 index、保留无关暂存变更，并在修改仓库状态前拒绝不安全的 shelf 操作
 - **Repository-bound request ordering** — discarded stale responses, coalesced refresh bursts, and cleared repository-scoped UI state before loading a newly selected repository / 丢弃过期响应、合并刷新请求，并在加载新仓库前清理旧仓库范围内的界面状态
 - **Commit and Push correctness** — split commit state responsibilities, made staged/unstaged diff boundaries explicit, and prevented stale Push selections from crossing repository switches / 拆分 commit 状态职责、明确 staged/unstaged 差异边界，并防止 Push 的过期选择跨仓库切换继续生效
+- **Host verification and missing refs** — restored desktop host test execution with current application bundles and kept unavailable refs on the expected non-error path / 恢复当前应用包格式下的桌面宿主测试执行，并让不存在的 ref 继续按预期走非错误分支
 
 ## [0.6.1] - 2026-07-29
 

@@ -371,6 +371,15 @@ describe("GitService structured comparison revisions", () => {
         await service.resolveCommitRef("HEAD"),
         mainCommitHash,
       );
+    } finally {
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null when a ref does not resolve", async () => {
+    const { base, repo } = await createComparisonRepository();
+    try {
+      const service = serviceFor(repo);
       assert.strictEqual(
         await service.resolveCommitRef("refs/heads/missing"),
         null,

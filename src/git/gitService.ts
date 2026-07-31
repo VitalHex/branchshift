@@ -5,7 +5,7 @@ import { GitCache, type ReachabilityCacheEntry } from "./cache";
 import { CommitService } from "./commit/commitService";
 import { IndexTransaction } from "./commit/indexTransaction";
 import type { CommitPathSelection } from "./commit/types";
-import { GitExecutor } from "./core/gitExecutor";
+import { GitCommandError, GitExecutor } from "./core/gitExecutor";
 import type { GitOperationResult } from "./core/operationResult";
 import { BranchShiftError, BranchShiftErrorCode } from "./errors";
 import { computeGraphLayout } from "./graphLayout";
@@ -250,7 +250,7 @@ export class GitService {
         ])
       ).trim();
     } catch (error) {
-      if ((error as { code?: unknown }).code === 1) {
+      if (error instanceof GitCommandError && error.exitCode === 1) {
         return null;
       }
       throw error;
