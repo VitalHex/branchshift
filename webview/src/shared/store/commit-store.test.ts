@@ -56,6 +56,7 @@ describe("commit-store per-repo isolation", () => {
       selectedFiles: new Set(),
       highlightedFiles: new Set(),
       amend: false,
+      operationError: null,
       changes: [],
       expandedGroups: new Set(["changes", "unversioned", "staged"]),
       collapsedDirs: new Set(),
@@ -68,9 +69,14 @@ describe("commit-store per-repo isolation", () => {
     useCommitStore.setState({
       commitMessage: "draft for A",
       selectedFiles: new Set(["a.ts:false"]),
+      operationError: {
+        code: "COMMIT_REJECTED",
+        message: "old repo error",
+      },
     });
     await applyRepoSwitch("/a", "/b", false);
     expect(useCommitStore.getState().commitMessage).toBe(""); // B had no draft
+    expect(useCommitStore.getState().operationError).toBeNull();
     useCommitStore.setState({ commitMessage: "draft for B" });
     await applyRepoSwitch("/b", "/a", false);
     expect(useCommitStore.getState().commitMessage).toBe("draft for A"); // A restored
@@ -438,6 +444,7 @@ describe("commit-store selected commit payload", () => {
     vi.mocked(bridge.request).mockRejectedValue({
       code: "COMMIT_REJECTED",
       message: "hook rejected",
+      recovery: "Review the hook output and retry.",
     });
     const consoleError = vi
       .spyOn(console, "error")
@@ -459,6 +466,11 @@ describe("commit-store selected commit payload", () => {
 
     expect(useCommitStore.getState().commitMessage).toBe("keep this draft");
     expect(useCommitStore.getState().amend).toBe(true);
+    expect(useCommitStore.getState().operationError).toEqual({
+      code: "COMMIT_REJECTED",
+      message: "hook rejected",
+      recovery: "Review the hook output and retry.",
+    });
     consoleError.mockRestore();
   });
 

@@ -33,6 +33,12 @@ export interface IdeaShelfEntry {
 
 export type TabType = "commit" | "shelf" | "stash";
 
+export interface CommitOperationError {
+  code?: string;
+  message: string;
+  recovery?: string;
+}
+
 export interface CommitDraftSlice {
   commitMessage: string;
   amend: boolean;
@@ -80,6 +86,7 @@ export interface CommitSelectionSlice {
 export interface CommitOperationSlice {
   loading: boolean;
   pendingOperations: number;
+  operationError: CommitOperationError | null;
   stageFile: (filePath: string) => Promise<void>;
   unstageFile: (filePath: string) => Promise<void>;
   stageAll: () => Promise<void>;

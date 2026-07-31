@@ -1,5 +1,7 @@
 import type { CommandType } from "../../bridge/types";
+import { beginRepoOperation } from "../repo-store";
 import type {
+  CommitOperationError,
   CommitOperationSlice,
   CommitSliceContext,
   WorkingTreeFile,
@@ -32,18 +34,41 @@ export function createOperationSlice({
     return result;
   };
 
+  const runMutationOperation = async <T>(
+    name: string,
+    operation: () => Promise<T>,
+  ): Promise<T> => {
+    const releaseRepoBinding = beginRepoOperation();
+    try {
+      return await runOperation(name, operation);
+    } finally {
+      releaseRepoBinding();
+    }
+  };
+
+  const clearOperationError = () => set({ operationError: null });
+
+  const reportOperationError = (label: string, error: unknown) => {
+    const normalized = normalizeOperationError(error);
+    if (!isStaleOperationError(error)) {
+      set({ operationError: normalized });
+    }
+    console.error(`${label} failed:`, error);
+  };
+
   const mutateAndRefresh = async (
     label: string,
     command: CommandType,
     params?: Record<string, unknown>,
   ) => {
+    clearOperationError();
     try {
-      await runOperation(label, async () => {
+      await runMutationOperation(label, async () => {
         await request(command, params);
         await get().fetchChanges();
       });
     } catch (error) {
-      console.error(`${label} failed:`, error);
+      reportOperationError(label, error);
     }
   };
 
@@ -55,6 +80,7 @@ export function createOperationSlice({
   const commitWith = async (command: "commitChanges" | "commitAndPush") => {
     const { commitMessage, amend } = get();
     if (!commitMessage.trim()) return false;
+    clearOperationError();
     const selections = selectedChanges().map((file) => ({
       path: file.path,
       ...(file.oldPath ? { oldPath: file.oldPath } : {}),
@@ -63,15 +89,15 @@ export function createOperationSlice({
     }));
 
     try {
-      await runOperation(command, async () => {
+      await runMutationOperation(command, async () => {
         await request(command, { message: commitMessage, amend, selections });
         await get().fetchChanges();
       });
       set({ commitMessage: "", amend: false });
       return true;
     } catch (error) {
-      console.error(
-        `${command === "commitChanges" ? "commit" : "commitAndPush"} failed:`,
+      reportOperationError(
+        command === "commitChanges" ? "commit" : "commitAndPush",
         error,
       );
       return false;
@@ -81,6 +107,7 @@ export function createOperationSlice({
   return {
     loading: false,
     pendingOperations: 0,
+    operationError: null,
 
     async stageFile(filePath) {
       await mutateAndRefresh("stageFile", "stageFile", { filePath });
@@ -111,78 +138,85 @@ export function createOperationSlice({
     },
 
     async showDiff(filePath, staged) {
+      clearOperationError();
       try {
         await runOperation("showDiff", () =>
           request("showDiffForWorkingFile", { filePath, staged }),
         );
       } catch (error) {
-        console.error("showDiff failed:", error);
+        reportOperationError("showDiff", error);
       }
     },
 
     async shelveChanges(message, filePaths) {
+      clearOperationError();
       try {
-        await runOperation("shelveChanges", async () => {
+        await runMutationOperation("shelveChanges", async () => {
           await request("shelveChanges", { message, filePaths });
           await Promise.all([get().fetchChanges(), get().fetchShelves()]);
         });
       } catch (error) {
-        console.error("shelveChanges failed:", error);
+        reportOperationError("shelveChanges", error);
       }
     },
 
     async unshelveChanges(stashId, drop = true) {
+      clearOperationError();
       try {
-        await runOperation("unshelveChanges", async () => {
+        await runMutationOperation("unshelveChanges", async () => {
           await request("unshelveChanges", { stashId, drop });
           await Promise.all([get().fetchChanges(), get().fetchShelves()]);
         });
       } catch (error) {
-        console.error("unshelveChanges failed:", error);
+        reportOperationError("unshelveChanges", error);
       }
     },
 
     async deleteShelve(stashId) {
+      clearOperationError();
       try {
-        await runOperation("deleteShelve", async () => {
+        await runMutationOperation("deleteShelve", async () => {
           await request("deleteShelve", { stashId });
           await get().fetchShelves();
         });
       } catch (error) {
-        console.error("deleteShelve failed:", error);
+        reportOperationError("deleteShelve", error);
       }
     },
 
     async ideaShelveChanges(message, filePaths) {
+      clearOperationError();
       try {
-        await runOperation("ideaShelveChanges", async () => {
+        await runMutationOperation("ideaShelveChanges", async () => {
           await request("ideaShelveChanges", { message, filePaths });
           await Promise.all([get().fetchChanges(), get().fetchIdeaShelves()]);
         });
       } catch (error) {
-        console.error("ideaShelveChanges failed:", error);
+        reportOperationError("ideaShelveChanges", error);
       }
     },
 
     async ideaUnshelveChanges(shelfName, drop = true) {
+      clearOperationError();
       try {
-        await runOperation("ideaUnshelveChanges", async () => {
+        await runMutationOperation("ideaUnshelveChanges", async () => {
           await request("ideaUnshelveChanges", { shelfName, drop });
           await Promise.all([get().fetchChanges(), get().fetchIdeaShelves()]);
         });
       } catch (error) {
-        console.error("ideaUnshelveChanges failed:", error);
+        reportOperationError("ideaUnshelveChanges", error);
       }
     },
 
     async deleteIdeaShelf(shelfName) {
+      clearOperationError();
       try {
-        await runOperation("deleteIdeaShelf", async () => {
+        await runMutationOperation("deleteIdeaShelf", async () => {
           await request("deleteIdeaShelf", { shelfName });
           await get().fetchIdeaShelves();
         });
       } catch (error) {
-        console.error("deleteIdeaShelf failed:", error);
+        reportOperationError("deleteIdeaShelf", error);
       }
     },
 
@@ -197,4 +231,33 @@ export function createOperationSlice({
       ]);
     },
   };
+}
+
+function normalizeOperationError(error: unknown): CommitOperationError {
+  const value = error as {
+    code?: unknown;
+    message?: unknown;
+    recovery?: unknown;
+  };
+  const message =
+    typeof value?.message === "string"
+      ? value.message
+      : error instanceof Error
+        ? error.message
+        : String(error);
+  return {
+    ...(typeof value?.code === "string" ? { code: value.code } : {}),
+    message,
+    ...(typeof value?.recovery === "string"
+      ? { recovery: value.recovery }
+      : {}),
+  };
+}
+
+function isStaleOperationError(error: unknown): boolean {
+  const value = error as { code?: unknown; message?: unknown };
+  return (
+    value?.code === "STALE_RESPONSE" ||
+    value?.message === "Repository changed before operation completed"
+  );
 }

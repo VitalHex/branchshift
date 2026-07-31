@@ -1,15 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useRepoStore } from "./repo-store";
+import {
+  beginRepoOperation,
+  subscribeRepoEvents,
+  useRepoStore,
+} from "./repo-store";
 
 // The bridge is fully mocked: `request` is a typed vi.fn so each test pins the
 // response/throw for a given command, and `setRepoContext` is observed to
 // assert the store converges onto the host-authoritative active id.
 const requestMock = vi.fn();
 const setRepoContextMock = vi.fn();
+let repoEventListener:
+  | ((event: string, data: Record<string, unknown>) => void)
+  | undefined;
 vi.mock("../bridge", () => ({
   bridge: {
     request: (...args: unknown[]) => requestMock(...args),
-    onEvent: vi.fn(() => () => {}),
+    onEvent: vi.fn(
+      (listener: (event: string, data: Record<string, unknown>) => void) => {
+        repoEventListener = listener;
+        return () => {};
+      },
+    ),
     setRepoContext: (...args: unknown[]) => setRepoContextMock(...args),
   },
 }));
@@ -23,6 +35,7 @@ describe("repo-store.select (Fix-5 F5: response activeId is authoritative)", () 
     requestMock.mockReset();
     setRepoContextMock.mockReset();
     resetStore();
+    subscribeRepoEvents();
   });
 
   it("sets activeRepoId from the RESPONSE activeId, not the requested repoId", async () => {
@@ -82,5 +95,43 @@ describe("repo-store.select (Fix-5 F5: response activeId is authoritative)", () 
     await useRepoStore.getState().select("/x");
     expect(useRepoStore.getState().activeRepoId).toBeNull();
     expect(setRepoContextMock).toHaveBeenCalledWith(null);
+  });
+
+  it("defers an external active-repository switch until the Commit mutation releases its binding", () => {
+    useRepoStore.setState({
+      activeRepoId: "/a",
+      repos: [{ id: "/a", name: "a", rootPath: "/a" }],
+    });
+    const release = beginRepoOperation();
+
+    repoEventListener?.("activeRepoChanged", {
+      repo: { id: "/b", name: "b", rootPath: "/b" },
+    });
+
+    expect(useRepoStore.getState().activeRepoId).toBe("/a");
+    expect(setRepoContextMock).not.toHaveBeenCalledWith("/b");
+
+    release();
+
+    expect(useRepoStore.getState().activeRepoId).toBe("/b");
+    expect(setRepoContextMock).toHaveBeenCalledWith("/b");
+  });
+
+  it("keeps only the latest active repository while a Commit mutation is bound", () => {
+    useRepoStore.setState({ activeRepoId: "/a" });
+    const release = beginRepoOperation();
+
+    repoEventListener?.("activeRepoChanged", {
+      repo: { id: "/b", name: "b", rootPath: "/b" },
+    });
+    repoEventListener?.("activeRepoChanged", {
+      repo: { id: "/c", name: "c", rootPath: "/c" },
+    });
+
+    release();
+
+    expect(useRepoStore.getState().activeRepoId).toBe("/c");
+    expect(setRepoContextMock).not.toHaveBeenCalledWith("/b");
+    expect(setRepoContextMock).toHaveBeenCalledWith("/c");
   });
 });

@@ -83,6 +83,7 @@ export async function applyRepoSwitch(
     ideaShelves: [],
     currentBranch: "",
     currentBranchHasUpstream: false,
+    operationError: null,
     selectedFiles: new Set(),
     highlightedFiles: new Set(),
   });
