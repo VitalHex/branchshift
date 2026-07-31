@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## [0.6.3] - 2026-07-31
+
+### Changed / 变更
+- **Publisher migration** — moved the public repository and Marketplace identity to VitalHex and prepared the first `vitalhex.branchshift` package / 仓库与 Marketplace 身份迁移至 VitalHex，并准备首个 `vitalhex.branchshift` 发布包
+
 ## [0.6.2] - 2026-07-30
 
 ### Fixed / 修复

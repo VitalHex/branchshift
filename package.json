@@ -1,18 +1,18 @@
 {
   "name": "branchshift",
   "displayName": "BranchShift — JetBrains-style Git for VS Code",
-  "publisher": "strNewBee",
+  "publisher": "vitalhex",
   "description": "Keep your JetBrains-style Git workflow in VS Code and Cursor with Git graph, commit and shelf tools, branch comparison, rebase, merge, conflicts, and multi-repo support.",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/strNewBee/branchshift"
+    "url": "https://github.com/VitalHex/branchshift"
   },
-  "homepage": "https://github.com/strNewBee/branchshift#readme",
+  "homepage": "https://github.com/VitalHex/branchshift#readme",
   "bugs": {
-    "url": "https://github.com/strNewBee/branchshift/issues"
+    "url": "https://github.com/VitalHex/branchshift/issues"
   },
   "galleryBanner": {
     "color": "#08172D",

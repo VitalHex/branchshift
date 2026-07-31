@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/strNewBee/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift 图标" />
+<img src="https://raw.githubusercontent.com/VitalHex/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift 图标" />
 
 <h1>BranchShift</h1>
 
@@ -72,7 +72,7 @@ BranchShift 当前从每个 workspace folder 发现一个 Git 仓库，并在 Co
 
 ## 安装
 
-> 如果你安装过 JetGit Plus 开发版 VSIX，请先卸载 `strNewBee.jetgit-plus`。BranchShift 使用新的扩展 ID `strNewBee.branchshift`，VS Code 会将两者视为不同扩展。
+> 如果你安装过 JetGit Plus 开发版 VSIX，请先卸载 `strNewBee.jetgit-plus`。BranchShift 使用新的扩展 ID `vitalhex.branchshift`，VS Code 会将两者视为不同扩展。
 
 ### VS Code Marketplace
 
@@ -80,7 +80,7 @@ BranchShift 当前从每个 workspace folder 发现一个 Git 仓库，并在 Co
 
 ### VSIX
 
-1. 从 [Releases](https://github.com/strNewBee/branchshift/releases) 下载最新 `.vsix`。
+1. 从 [Releases](https://github.com/VitalHex/branchshift/releases) 下载最新 `.vsix`。
 2. 在命令面板运行 **Extensions: Install from VSIX...**。
 
 ## 环境要求
@@ -91,7 +91,7 @@ BranchShift 当前从每个 workspace folder 发现一个 Git 仓库，并在 Co
 ## 本地开发
 
 ```bash
-git clone https://github.com/strNewBee/branchshift.git
+git clone https://github.com/VitalHex/branchshift.git
 cd branchshift
 pnpm install
 cd webview && pnpm install && cd ..

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/strNewBee/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift icon" />
+<img src="https://raw.githubusercontent.com/VitalHex/branchshift/main/images/assets/logo-128.png" width="88" alt="BranchShift icon" />
 
 <h1>BranchShift</h1>
 
@@ -72,7 +72,7 @@ BranchShift discovers one Git repository per workspace folder and exposes a shar
 
 ## Installation
 
-> Upgrading from a JetGit Plus development VSIX? Uninstall `strNewBee.jetgit-plus` first. BranchShift intentionally uses the new extension ID `strNewBee.branchshift`, so VS Code treats it as a separate extension.
+> Upgrading from a JetGit Plus development VSIX? Uninstall `strNewBee.jetgit-plus` first. BranchShift uses the extension ID `vitalhex.branchshift`, so VS Code treats it as a separate extension.
 
 ### VS Code Marketplace
 
@@ -80,7 +80,7 @@ Search for **BranchShift** or **Git** in the Extensions view.
 
 ### VSIX
 
-1. Download the latest `.vsix` from [Releases](https://github.com/strNewBee/branchshift/releases).
+1. Download the latest `.vsix` from [Releases](https://github.com/VitalHex/branchshift/releases).
 2. Run **Extensions: Install from VSIX...** from the Command Palette.
 
 ## Requirements
@@ -91,7 +91,7 @@ Search for **BranchShift** or **Git** in the Extensions view.
 ## Local development
 
 ```bash
-git clone https://github.com/strNewBee/branchshift.git
+git clone https://github.com/VitalHex/branchshift.git
 cd branchshift
 pnpm install
 cd webview && pnpm install && cd ..
