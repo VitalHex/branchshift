@@ -1,15 +1,19 @@
-import { execFile, spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { promisify } from "node:util";
 import { GitCache, type ReachabilityCacheEntry } from "./cache";
+import { CommitService } from "./commit/commitService";
+import { IndexTransaction } from "./commit/indexTransaction";
+import type { CommitPathSelection } from "./commit/types";
+import { GitCommandError, GitExecutor } from "./core/gitExecutor";
+import type { GitOperationResult } from "./core/operationResult";
 import { BranchShiftError, BranchShiftErrorCode } from "./errors";
 import { computeGraphLayout } from "./graphLayout";
 import type {
   BranchInfo,
   CherryPickState,
   CommitNode,
+  CommitRequest,
   DiffFile,
   FileStatus,
   GraphLayoutResult,
@@ -21,8 +25,6 @@ import type {
   RefInfo,
   TagInfo,
 } from "./types";
-
-const execFileAsync = promisify(execFile);
 
 // For parsing git output (actual null byte)
 const FIELD_SEP = "\x00";
@@ -46,13 +48,43 @@ const LOG_FORMAT = [
   "%D", // refs
 ].join(FMT_FIELD_SEP);
 
+import { RefService } from "./refs/refService";
 import type { RepositoryPaths } from "./repoRegistry";
+import { NativeShelfService } from "./shelf/nativeShelfService";
+import { PatchShelfService } from "./shelf/patchShelfService";
+import { WorkingTreeService } from "./workingTree/workingTreeService";
 
 export class GitService {
   readonly cache = new GitCache();
   private reachabilityCache: ReachabilityCacheEntry | null = null;
 
-  constructor(readonly paths: RepositoryPaths) {}
+  private readonly executor: GitExecutor;
+  private readonly refService: RefService;
+  private readonly workingTreeService: WorkingTreeService;
+  private readonly commitService: CommitService;
+  private readonly nativeShelfService: NativeShelfService;
+  private readonly patchShelfService: PatchShelfService;
+
+  constructor(readonly paths: RepositoryPaths) {
+    this.executor = new GitExecutor(paths.workTreeRoot);
+    this.refService = new RefService(this.executor);
+    this.workingTreeService = new WorkingTreeService(this.executor);
+    const indexTransaction = new IndexTransaction(this.executor);
+    this.commitService = new CommitService(
+      this.executor,
+      this.workingTreeService,
+      indexTransaction,
+    );
+    this.nativeShelfService = new NativeShelfService(
+      this.executor,
+      this.workingTreeService,
+      indexTransaction,
+    );
+    this.patchShelfService = new PatchShelfService(
+      this.executor,
+      this.workingTreeService,
+    );
+  }
 
   get rootPath(): string {
     return this.paths.workTreeRoot;
@@ -62,16 +94,7 @@ export class GitService {
     args: string[],
     maxBuffer = MAX_BUFFER,
   ): Promise<string> {
-    const { stdout } = await execFileAsync("git", args, {
-      cwd: this.rootPath,
-      maxBuffer,
-      env: {
-        ...process.env,
-        LC_ALL: "C",
-        GIT_TERMINAL_PROMPT: "0",
-      },
-    });
-    return stdout;
+    return this.executor.text(args, { maxBuffer });
   }
 
   async checkGitAvailable(): Promise<boolean> {
@@ -227,7 +250,7 @@ export class GitService {
         ])
       ).trim();
     } catch (error) {
-      if ((error as { code?: unknown }).code === 1) {
+      if (error instanceof GitCommandError && error.exitCode === 1) {
         return null;
       }
       throw error;
@@ -275,47 +298,11 @@ export class GitService {
   }
 
   protected loadReachableHashes(tip: string): Promise<Set<string>> {
-    return new Promise((resolve, reject) => {
-      const hashes = new Set<string>();
-      let remainder = "";
-      let stderr = "";
-      const child = spawn("git", ["rev-list", tip], {
-        cwd: this.rootPath,
-        env: {
-          ...process.env,
-          LC_ALL: "C",
-          GIT_TERMINAL_PROMPT: "0",
-        },
-      });
-
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        const lines = `${remainder}${chunk}`.split("\n");
-        remainder = lines.pop() ?? "";
-        for (const line of lines) {
-          const hash = line.trim();
-          if (hash) hashes.add(hash);
-        }
-      });
-      child.stderr.setEncoding("utf8");
-      child.stderr.on("data", (chunk: string) => {
-        stderr += chunk;
-      });
-      child.once("error", reject);
-      child.once("close", (code) => {
-        const finalHash = remainder.trim();
-        if (finalHash) hashes.add(finalHash);
-        if (code === 0) {
-          resolve(hashes);
-          return;
-        }
-        reject(
-          new Error(
-            stderr.trim() || `git rev-list exited with status ${String(code)}`,
-          ),
-        );
-      });
-    });
+    return this.executor
+      .lines(["rev-list", tip])
+      .then(
+        (lines) => new Set(lines.map((line) => line.trim()).filter(Boolean)),
+      );
   }
 
   async getBranches(): Promise<BranchInfo[]> {
@@ -325,83 +312,7 @@ export class GitService {
       return cached;
     }
 
-    const localFormat = [
-      "%(refname:short)",
-      "%(refname)",
-      "%(HEAD)",
-      "%(upstream:short)",
-      "%(upstream:track,nobracket)",
-      "%(objectname)",
-    ].join(REF_FMT_FIELD_SEP);
-
-    const worktreeCheckouts = parseWorktreeCheckouts(
-      await this.execGit(["worktree", "list", "--porcelain"]).catch(() => ""),
-    );
-
-    const localOutput = await this.execGit([
-      "branch",
-      `--format=${localFormat}`,
-    ]);
-
-    const remoteOutput = await this.execGit([
-      "branch",
-      "-r",
-      `--format=${localFormat}`,
-    ]).catch(() => "");
-
-    const branches: BranchInfo[] = [];
-
-    for (const line of localOutput.trim().split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      const fields = line.split(FIELD_SEP);
-      const name = fields[0]?.trim() ?? "";
-      const fullRef = fields[1]?.trim() ?? `refs/heads/${name}`;
-      const isCurrent = fields[2]?.trim() === "*";
-      const upstream = fields[3]?.trim() || undefined;
-      const track = fields[4]?.trim() ?? "";
-      const lastCommitHash = fields[5]?.trim() ?? "";
-
-      const { ahead, behind } = parseTrack(track);
-
-      branches.push({
-        name,
-        fullRef,
-        isRemote: false,
-        isCurrent,
-        upstream,
-        checkedOutWorktreePath: worktreeCheckouts.get(fullRef),
-        ahead,
-        behind,
-        lastCommitHash,
-      });
-    }
-
-    for (const line of remoteOutput.trim().split("\n")) {
-      if (!line.trim()) {
-        continue;
-      }
-      const fields = line.split(FIELD_SEP);
-      const name = fields[0]?.trim() ?? "";
-      const fullRef = fields[1]?.trim() ?? `refs/remotes/${name}`;
-      const lastCommitHash = fields[5]?.trim() ?? "";
-
-      // Skip HEAD pointers like origin/HEAD
-      if (name.endsWith("/HEAD")) {
-        continue;
-      }
-
-      branches.push({
-        name,
-        fullRef,
-        isRemote: true,
-        isCurrent: false,
-        ahead: 0,
-        behind: 0,
-        lastCommitHash,
-      });
-    }
+    const branches = await this.refService.getBranches();
 
     this.cache.set(cacheKey, branches);
     return branches;
@@ -526,37 +437,25 @@ export class GitService {
       return Buffer.alloc(0);
     }
     try {
-      const { stdout } = await execFileAsync(
-        "git",
-        ["show", `${ref}:${filePath}`],
-        {
-          cwd: this.rootPath,
-          maxBuffer: MAX_BUFFER,
-          encoding: "buffer",
-          env: {
-            ...process.env,
-            LC_ALL: "C",
-            GIT_TERMINAL_PROMPT: "0",
-          },
-        },
-      );
-      return stdout;
+      return await this.executor.buffer(["show", `${ref}:${filePath}`], {
+        maxBuffer: MAX_BUFFER,
+      });
     } catch {
       return Buffer.alloc(0);
     }
   }
 
+  readFileContent(ref: string, filePath: string): Promise<Buffer> {
+    if (!ref) {
+      throw new Error("A revision is required to read file content");
+    }
+    return this.executor.buffer(["show", `${ref}:${filePath}`], {
+      maxBuffer: MAX_BUFFER,
+    });
+  }
+
   async getCommitFiles(hash: string): Promise<DiffFile[]> {
-    const output = await this.execGit([
-      "diff-tree",
-      "--root",
-      "--no-commit-id",
-      "-r",
-      "--name-status",
-      "-M",
-      hash,
-    ]);
-    return parseDiffNameStatus(output);
+    return this.workingTreeService.getCommitFiles(hash);
   }
 
   async getCommitRangeFiles(hashes: string[]): Promise<DiffFile[]> {
@@ -597,35 +496,11 @@ export class GitService {
   }
 
   async getStatus(): Promise<FileStatus[]> {
-    const output = await this.execGit(["status", "--porcelain=v1"]);
-    const files: FileStatus[] = [];
+    return this.workingTreeService.getStatus();
+  }
 
-    for (const line of output.split("\n")) {
-      if (line.length < 4) {
-        continue;
-      }
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-      const rest = line.substring(3);
-
-      // Handle renames: "R  old -> new"
-      const arrowIdx = rest.indexOf(" -> ");
-      if (arrowIdx !== -1) {
-        files.push({
-          path: rest.substring(arrowIdx + 4),
-          oldPath: rest.substring(0, arrowIdx),
-          indexStatus,
-          workTreeStatus,
-        });
-      } else {
-        files.push({
-          path: rest,
-          indexStatus,
-          workTreeStatus,
-        });
-      }
-    }
-    return files;
+  getIndexFileContent(path: string): Promise<Buffer> {
+    return this.workingTreeService.getIndexFileContent(path);
   }
 
   async getCommitParents(hash: string): Promise<string[]> {
@@ -671,7 +546,7 @@ export class GitService {
 
   async cherryPickAction(action: "continue" | "abort" | "skip"): Promise<void> {
     if (action === "continue") {
-      // Stage all resolved files before continuing (like IntelliJ IDEA behavior)
+      // Stage all resolved files before continuing.
       await this.execGit(["add", "-u"]);
       // Use --allow-empty to handle the case where cherry-pick becomes empty after conflict resolution
       try {
@@ -1181,70 +1056,7 @@ export class GitService {
   // ─── Commit Panel Operations ───────────────────────────────────────
 
   async getWorkingTreeChanges(): Promise<import("./types").WorkingTreeFile[]> {
-    const output = await this.execGit(["status", "--porcelain=v1", "-uall"]);
-    const files: import("./types").WorkingTreeFile[] = [];
-
-    for (const line of output.split("\n")) {
-      if (line.length < 4) continue;
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-
-      // Skip ignored files
-      if (indexStatus === "!" && workTreeStatus === "!") continue;
-
-      const rest = line.substring(3);
-
-      // Handle renames
-      const arrowIdx = rest.indexOf(" -> ");
-      const filePath = arrowIdx !== -1 ? rest.substring(arrowIdx + 4) : rest;
-      const oldPath = arrowIdx !== -1 ? rest.substring(0, arrowIdx) : undefined;
-
-      // Determine if file is staged
-      const staged =
-        indexStatus !== " " && indexStatus !== "?" && indexStatus !== "!";
-
-      // Determine status
-      let status: import("./types").WorkingTreeFile["status"];
-      if (indexStatus === "?" && workTreeStatus === "?") {
-        status = "untracked";
-      } else if (
-        indexStatus === "U" ||
-        workTreeStatus === "U" ||
-        (indexStatus === "A" && workTreeStatus === "A") ||
-        (indexStatus === "D" && workTreeStatus === "D")
-      ) {
-        status = "conflicted";
-      } else if (indexStatus === "A" || workTreeStatus === "A") {
-        status = "added";
-      } else if (indexStatus === "D" || workTreeStatus === "D") {
-        status = "deleted";
-      } else if (indexStatus === "R" || workTreeStatus === "R") {
-        status = "renamed";
-      } else {
-        status = "modified";
-      }
-
-      // For files that have both staged and unstaged changes, emit two entries
-      if (
-        staged &&
-        workTreeStatus !== " " &&
-        workTreeStatus !== "?" &&
-        workTreeStatus !== "!"
-      ) {
-        // Staged version
-        files.push({ path: filePath, oldPath, status, staged: true });
-        // Unstaged version
-        files.push({
-          path: filePath,
-          oldPath,
-          status: "modified",
-          staged: false,
-        });
-      } else {
-        files.push({ path: filePath, oldPath, status, staged });
-      }
-    }
-    return files;
+    return this.workingTreeService.getWorkingTreeChanges();
   }
 
   async stageFiles(filePaths: string[]): Promise<void> {
@@ -1271,12 +1083,22 @@ export class GitService {
     this.invalidateCache();
   }
 
+  async commitSelected(
+    request: CommitRequest,
+  ): Promise<GitOperationResult<void>> {
+    const result = await this.commitService.commitSelected(request);
+    if (result.ok) this.invalidateCache();
+    return result;
+  }
+
   async commitAndPush(message: string, amend = false): Promise<void> {
     await this.commit(message, amend);
-    // Push current branch
+    await this.pushCurrentBranch(amend);
+  }
+
+  async pushCurrentBranch(force = false): Promise<void> {
     const branch = await this.getCurrentBranch();
     if (branch) {
-      const force = amend;
       await this.push(branch, force);
     }
   }
@@ -1427,63 +1249,14 @@ export class GitService {
   }
 
   async shelveChanges(message: string, filePaths?: string[]): Promise<void> {
-    if (filePaths && filePaths.length > 0) {
-      // Strategy: to stash only specific files without pulling in other staged files,
-      // we need to temporarily reset the index, stage only our target files, then stash.
-
-      // 1. Save current index state by creating a temporary stash of the index
-      //    We use a different approach: reset index, add targets, stash, restore index.
-
-      // Get current status to know what's staged
-      const statusBefore = await this.execGit(["status", "--porcelain=v1"]);
-      const previouslyStaged: string[] = [];
-      for (const line of statusBefore.split("\n")) {
-        if (line.length < 4) continue;
-        const indexStatus = line[0];
-        if (indexStatus !== " " && indexStatus !== "?" && indexStatus !== "!") {
-          const rest = line.substring(3);
-          const arrowIdx = rest.indexOf(" -> ");
-          const filePath =
-            arrowIdx !== -1 ? rest.substring(arrowIdx + 4) : rest;
-          previouslyStaged.push(filePath);
-        }
-      }
-
-      // 2. Reset the index (unstage everything) without touching working tree
-      try {
-        await this.execGit(["reset", "HEAD"]);
-      } catch {
-        // May fail if there's no HEAD (initial commit) — that's ok
-      }
-
-      // 3. Stage only the target files
-      await this.execGit(["add", "--", ...filePaths]);
-
-      // 4. Stash only the staged files
-      await this.execGit([
-        "stash",
-        "push",
-        "--staged",
-        "-m",
-        message || "Shelved changes",
-      ]);
-
-      // 5. Re-stage previously staged files (that weren't stashed)
-      const remainingToStage = previouslyStaged.filter(
-        (f) => !filePaths.includes(f),
-      );
-      if (remainingToStage.length > 0) {
-        try {
-          await this.execGit(["add", "--", ...remainingToStage]);
-        } catch {
-          // Some files may no longer exist, ignore errors
-        }
-      }
-    } else {
-      // Stash all changes including untracked
-      const args = ["stash", "push", "-m", message || "Shelved changes", "-u"];
-      await this.execGit(args);
-    }
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.nativeShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
     this.invalidateCache();
   }
 
@@ -1600,47 +1373,14 @@ export class GitService {
     message: string,
     filePaths?: string[],
   ): Promise<void> {
-    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
-    await fs.mkdir(shelfDir, { recursive: true });
-
-    const sanitizedName = this.sanitizeShelfName(message || "Changes");
-    const uniqueName = await this.getUniqueShelfName(shelfDir, sanitizedName);
-
-    // Create shelf subdirectory
-    const entryDir = path.join(shelfDir, uniqueName);
-    await fs.mkdir(entryDir, { recursive: true });
-
-    // Generate patch
-    let patchContent = "";
-    if (filePaths && filePaths.length > 0) {
-      patchContent = await this.generatePatchForFiles(filePaths);
-    } else {
-      patchContent = await this.generatePatchAll();
-    }
-
-    if (!patchContent.trim()) {
-      // Clean up empty directory
-      await fs.rm(entryDir, { recursive: true, force: true });
-      throw new Error("No changes to shelve");
-    }
-
-    // Write patch file
-    const patchFilePath = path.join(entryDir, "shelved.patch");
-    await fs.writeFile(patchFilePath, patchContent, "utf-8");
-
-    // Write XML metadata
-    const timestamp = Date.now();
-    const xmlContent = `<changelist name="${this.escapeXml(uniqueName)}" date="${timestamp}" recycled="false">\n  <option name="PATH" value="$PROJECT_DIR$/.idea/shelf/${uniqueName}/shelved.patch" />\n  <option name="DESCRIPTION" value="${this.escapeXml(message || "")}" />\n</changelist>\n`;
-    const xmlPath = path.join(shelfDir, `${uniqueName}.xml`);
-    await fs.writeFile(xmlPath, xmlContent, "utf-8");
-
-    // Revert the files in working tree
-    if (filePaths && filePaths.length > 0) {
-      await this.revertFiles(filePaths);
-    } else {
-      await this.revertAllChanges();
-    }
-
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.patchShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
     this.invalidateCache();
   }
 
@@ -1742,154 +1482,27 @@ export class GitService {
     }
   }
 
-  private async generatePatchForFiles(filePaths: string[]): Promise<string> {
-    let patch = "";
-
-    // Separate tracked and untracked files
-    const tracked: string[] = [];
-    const untracked: string[] = [];
-
-    for (const filePath of filePaths) {
-      try {
-        await this.execGit(["ls-files", "--error-unmatch", filePath]);
-        tracked.push(filePath);
-      } catch {
-        untracked.push(filePath);
-      }
-    }
-
-    // Generate diff for tracked files (staged + unstaged)
-    if (tracked.length > 0) {
-      try {
-        const diff = await this.execGit(["diff", "HEAD", "--", ...tracked]);
-        patch += diff;
-      } catch {
-        // If HEAD doesn't exist (initial commit), diff against empty tree
-        try {
-          const diff = await this.execGit([
-            "diff",
-            "--cached",
-            "--",
-            ...tracked,
-          ]);
-          patch += diff;
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    // Generate patch for untracked files
-    for (const filePath of untracked) {
-      const fullPath = path.join(this.rootPath, filePath);
-      try {
-        const content = await fs.readFile(fullPath, "utf-8");
-        const lines = content.split("\n");
-        patch += `diff --git a/${filePath} b/${filePath}\n`;
-        patch += "new file mode 100644\n";
-        patch += "--- /dev/null\n";
-        patch += `+++ b/${filePath}\n`;
-        patch += `@@ -0,0 +1,${lines.length} @@\n`;
-        for (const line of lines) {
-          patch += `+${line}\n`;
-        }
-      } catch {
-        // skip files that can't be read
-      }
-    }
-
-    return patch;
+  private async resolveShelfPaths(
+    filePaths: readonly string[],
+  ): Promise<CommitPathSelection[]> {
+    const changes = await this.workingTreeService.getWorkingTreeChanges();
+    return filePaths.map((filePath) => {
+      const matching = changes.filter(
+        (change) => change.path === filePath || change.oldPath === filePath,
+      );
+      const oldPath = matching.find((change) => change.oldPath)?.oldPath;
+      return {
+        path: filePath,
+        ...(oldPath ? { oldPath } : {}),
+        includeIndex: matching.some((change) => change.staged),
+        includeWorkingTree: matching.some((change) => !change.staged),
+      };
+    });
   }
 
-  private async generatePatchAll(): Promise<string> {
-    let patch = "";
-
-    // Get diff for all tracked changes
-    try {
-      const diff = await this.execGit(["diff", "HEAD"]);
-      patch += diff;
-    } catch {
-      try {
-        const diff = await this.execGit(["diff", "--cached"]);
-        patch += diff;
-      } catch {
-        // ignore
-      }
-    }
-
-    // Get untracked files
-    try {
-      const untrackedOutput = await this.execGit([
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-      ]);
-      const untrackedFiles = untrackedOutput.trim().split("\n").filter(Boolean);
-
-      for (const filePath of untrackedFiles) {
-        const fullPath = path.join(this.rootPath, filePath);
-        try {
-          const content = await fs.readFile(fullPath, "utf-8");
-          const lines = content.split("\n");
-          patch += `diff --git a/${filePath} b/${filePath}\n`;
-          patch += "new file mode 100644\n";
-          patch += "--- /dev/null\n";
-          patch += `+++ b/${filePath}\n`;
-          patch += `@@ -0,0 +1,${lines.length} @@\n`;
-          for (const line of lines) {
-            patch += `+${line}\n`;
-          }
-        } catch {
-          // skip binary or unreadable files
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    return patch;
-  }
-
-  private async revertFiles(filePaths: string[]): Promise<void> {
-    for (const filePath of filePaths) {
-      try {
-        await this.execGit(["ls-files", "--error-unmatch", filePath]);
-        // Tracked file: checkout from HEAD
-        await this.execGit(["checkout", "HEAD", "--", filePath]);
-      } catch {
-        // Untracked file: delete it
-        const fullPath = path.join(this.rootPath, filePath);
-        try {
-          await fs.unlink(fullPath);
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }
-
-  private async revertAllChanges(): Promise<void> {
-    // Reset tracked files
-    try {
-      await this.execGit(["checkout", "HEAD", "--", "."]);
-    } catch {
-      // ignore (e.g. no HEAD yet)
-    }
-    // Remove untracked files
-    try {
-      await this.execGit(["clean", "-fd"]);
-    } catch {
-      // ignore
-    }
-  }
-
-  private escapeXml(str: string): string {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+  private unwrapShelfResult<T>(result: GitOperationResult<T>): T {
+    if (result.ok) return result.value;
+    throw new BranchShiftError(result.code, result.message, result.recovery);
   }
 
   invalidateCache(pattern?: string): void {
@@ -1919,43 +1532,6 @@ function parseWorktreeCheckouts(output: string): Map<string, string> {
     }
   }
   return result;
-}
-
-function parseDiffNameStatus(output: string): DiffFile[] {
-  const files: DiffFile[] = [];
-  for (const line of output.trim().split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-    const parts = line.split("\t");
-    const statusCode = parts[0]?.trim() ?? "";
-
-    if (statusCode.startsWith("R") || statusCode.startsWith("C")) {
-      const oldPath = parts[1] ?? "";
-      const newPath = parts[2] ?? "";
-      files.push({
-        oldPath,
-        newPath,
-        status: statusCode.startsWith("R") ? "renamed" : "copied",
-        isBinary: false,
-      });
-    } else {
-      const filePath = parts[1] ?? "";
-      let status: DiffFile["status"] = "modified";
-      if (statusCode === "A") {
-        status = "added";
-      } else if (statusCode === "D") {
-        status = "deleted";
-      }
-      files.push({
-        oldPath: filePath,
-        newPath: filePath,
-        status,
-        isBinary: false,
-      });
-    }
-  }
-  return files;
 }
 
 function parseLogOutput(output: string): CommitNode[] {
@@ -2045,18 +1621,4 @@ function parseRefs(refsStr: string): RefInfo[] {
     }
   }
   return refs;
-}
-
-function parseTrack(track: string): { ahead: number; behind: number } {
-  let ahead = 0;
-  let behind = 0;
-  const aheadMatch = track.match(/ahead (\d+)/);
-  if (aheadMatch) {
-    ahead = parseInt(aheadMatch[1], 10);
-  }
-  const behindMatch = track.match(/behind (\d+)/);
-  if (behindMatch) {
-    behind = parseInt(behindMatch[1], 10);
-  }
-  return { ahead, behind };
 }

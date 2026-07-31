@@ -1,4 +1,10 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -97,6 +103,37 @@ function lastCall(command: string) {
   return calls.length ? calls[calls.length - 1] : undefined;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function commit(hash: string, subject: string) {
+  return {
+    hash,
+    shortHash: hash,
+    parents: [],
+    authorName: "Author",
+    authorEmail: "author@example.test",
+    authorDate: "2026-07-30T00:00:00.000Z",
+    subject,
+    body: "",
+    refs: [],
+  };
+}
+
+function changedFile(path: string) {
+  return {
+    oldPath: path,
+    newPath: path,
+    status: "modified" as const,
+    isBinary: false,
+  };
+}
+
 describe("PushApp re-init binding", () => {
   beforeEach(() => {
     setRepoContext.mockReset();
@@ -192,7 +229,7 @@ describe("PushApp re-init binding", () => {
   });
 });
 
-describe("PushApp header repo label (Task 25)", () => {
+describe("PushApp header repo label", () => {
   beforeEach(() => {
     setRepoContext.mockReset();
     request.mockClear();
@@ -272,7 +309,7 @@ describe("PushApp header repo label (Task 25)", () => {
 });
 
 /**
- * F2 (P1): re-init during a rejected dialog + recovery repoId pinning.
+ * Re-init during a rejected dialog and recovery repoId pinning.
  *
  * Bug: while repo A's push-rejected dialog was open, a pushPanelInit{repoId:"B"}
  * (panel reuse) immediately rebound the hook to B. The recovery requests then
@@ -283,7 +320,7 @@ describe("PushApp header repo label (Task 25)", () => {
  * passes it as an explicit override; (B) a re-init received while pushing OR
  * while the rejected dialog is open is DEFERRED until the panel goes idle.
  */
-describe("PushApp rejected-dialog re-init deferral (F2)", () => {
+describe("PushApp rejected-dialog re-init deferral", () => {
   beforeEach(() => {
     setRepoContext.mockReset();
     request.mockClear();
@@ -387,7 +424,7 @@ describe("PushApp rejected-dialog re-init deferral (F2)", () => {
     });
   });
 
-  // Fix-11 (Important #4): the Push panel has TWO independent deferred-repo
+  // The Push panel has two independent deferred-repo
   // queues — the hook's pendingRepoRef (for activeRepoChanged) and Push's own
   // pendingReInitRef (for pushPanelInit) — that both drain when the panel goes
   // idle, in React effect-registration order (the hook's drain runs FIRST, then
@@ -397,7 +434,7 @@ describe("PushApp rejected-dialog re-init deferral (F2)", () => {
   // global active repo was C — a wrong-repo-operation window. The fix stamps a
   // shared seq at arrival at BOTH points and claim-gates application so the
   // LAST-ARRIVED event wins regardless of drain order.
-  it("Fix-11: a stale pushPanelInit(B) then a newer activeRepoChanged(C) while busy ends on C (latest wins, regardless of drain order)", async () => {
+  it("a stale pushPanelInit(B) then a newer activeRepoChanged(C) while busy ends on C", async () => {
     seedRoot({
       repoId: "A",
       branch: "main",
@@ -482,6 +519,350 @@ describe("PushApp rejected-dialog re-init deferral (F2)", () => {
     // (loadRepo fires from the hook's onFollow after applyAt rebinds to C).
     await waitFor(() => {
       expect(lastCall("getBranches")?.[2]).toMatchObject({ repoId: "C" });
+    });
+  });
+});
+
+describe("PushApp request ordering", () => {
+  beforeEach(() => {
+    setRepoContext.mockReset();
+    request.mockClear();
+    onEvent.mockClear();
+    eventListeners.clear();
+    for (const key of Object.keys(responders)) delete responders[key];
+  });
+
+  afterEach(() => {
+    cleanup();
+    eventListeners.clear();
+  });
+
+  it("keeps files from the newest selected commit when responses arrive in reverse order", async () => {
+    seedRoot({ repoId: "A", branch: "main", remote: "origin" });
+    const firstFiles = deferred<ReturnType<typeof changedFile>[]>();
+    const secondFiles = deferred<ReturnType<typeof changedFile>[]>();
+
+    responders.getAheadCommits = () => ({
+      commits: [
+        commit("first", "First commit"),
+        commit("second", "Second commit"),
+      ],
+    });
+    responders.getCommitRangeFiles = (params) => {
+      const [hash] = (params as { hashes: string[] }).hashes;
+      return hash === "first" ? firstFiles.promise : secondFiles.promise;
+    };
+
+    render(<PushApp />);
+
+    await waitFor(() => {
+      expect(lastCall("getCommitRangeFiles")?.[1]).toMatchObject({
+        hashes: ["first"],
+      });
+    });
+
+    fireEvent.click(document.querySelectorAll(".push-commit-item")[1]);
+
+    await waitFor(() => {
+      expect(lastCall("getCommitRangeFiles")?.[1]).toMatchObject({
+        hashes: ["second"],
+      });
+    });
+
+    await act(async () => {
+      secondFiles.resolve([changedFile("newer.txt")]);
+      await secondFiles.promise;
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("newer.txt");
+    });
+
+    await act(async () => {
+      firstFiles.resolve([changedFile("older.txt")]);
+      await firstFiles.promise;
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("newer.txt");
+      expect(document.body.textContent).not.toContain("older.txt");
+    });
+  });
+
+  it("keeps ahead commits for the newest remote when responses arrive in reverse order", async () => {
+    seedRoot({ repoId: "A", branch: "main", remote: "origin" });
+    const originAhead = deferred<{ commits: ReturnType<typeof commit>[] }>();
+    const upstreamAhead = deferred<{ commits: ReturnType<typeof commit>[] }>();
+
+    responders.getAheadCommits = (params) =>
+      (params as { remote: string }).remote === "origin"
+        ? originAhead.promise
+        : upstreamAhead.promise;
+    responders.getRemoteBranches = () => [
+      { remote: "origin", branches: ["main"] },
+      { remote: "upstream", branches: ["main"] },
+    ];
+    responders.getCommitRangeFiles = () => [];
+
+    render(<PushApp />);
+
+    await waitFor(() => {
+      expect(lastCall("getAheadCommits")?.[1]).toMatchObject({
+        remote: "origin",
+      });
+    });
+
+    fireEvent.click(document.querySelector(".push-route-target") as Element);
+    await waitFor(() => {
+      expect(
+        Array.from(
+          document.querySelectorAll(".remote-branch-selector__remote-item"),
+        ).some((item) => item.textContent === "upstream"),
+      ).toBe(true);
+    });
+    const upstreamItem = Array.from(
+      document.querySelectorAll(".remote-branch-selector__remote-item"),
+    ).find((item) => item.textContent === "upstream");
+    fireEvent.click(upstreamItem as Element);
+
+    await waitFor(() => {
+      expect(lastCall("getAheadCommits")?.[1]).toMatchObject({
+        remote: "upstream",
+      });
+    });
+
+    await act(async () => {
+      upstreamAhead.resolve({
+        commits: [commit("newer", "Newest remote commit")],
+      });
+      await upstreamAhead.promise;
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Newest remote commit");
+    });
+
+    await act(async () => {
+      originAhead.resolve({
+        commits: [commit("older", "Older remote commit")],
+      });
+      await originAhead.promise;
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Newest remote commit");
+      expect(document.body.textContent).not.toContain("Older remote commit");
+    });
+  });
+
+  it("drops every earlier response after a repository rebind", async () => {
+    seedRoot({
+      repoId: "A",
+      repoName: "first",
+      branch: "main",
+      remote: "origin",
+    });
+    const oldFiles = deferred<ReturnType<typeof changedFile>[]>();
+    const oldRemoteAhead = deferred<{
+      commits: ReturnType<typeof commit>[];
+    }>();
+
+    responders.getAheadCommits = (params) => {
+      const { branchName, remote } = params as {
+        branchName: string;
+        remote: string;
+      };
+      if (branchName === "main" && remote === "origin") {
+        return { commits: [commit("first", "First repository commit")] };
+      }
+      if (branchName === "main" && remote === "upstream") {
+        return oldRemoteAhead.promise;
+      }
+      return { commits: [commit("second", "Second repository commit")] };
+    };
+    responders.getCommitRangeFiles = (params) => {
+      const [hash] = (params as { hashes: string[] }).hashes;
+      return hash === "first" ? oldFiles.promise : [];
+    };
+    responders.getRemoteBranches = () => [
+      { remote: "origin", branches: ["main"] },
+      { remote: "upstream", branches: ["main"] },
+    ];
+
+    render(<PushApp />);
+
+    await waitFor(() => {
+      expect(lastCall("getCommitRangeFiles")?.[1]).toMatchObject({
+        hashes: ["first"],
+      });
+    });
+
+    fireEvent.click(document.querySelector(".push-route-target") as Element);
+    await waitFor(() => {
+      expect(
+        Array.from(
+          document.querySelectorAll(".remote-branch-selector__remote-item"),
+        ).some((item) => item.textContent === "upstream"),
+      ).toBe(true);
+    });
+    const upstreamItem = Array.from(
+      document.querySelectorAll(".remote-branch-selector__remote-item"),
+    ).find((item) => item.textContent === "upstream");
+    fireEvent.click(upstreamItem as Element);
+
+    await waitFor(() => {
+      expect(lastCall("getAheadCommits")?.[1]).toMatchObject({
+        remote: "upstream",
+      });
+    });
+
+    act(() => {
+      emit("pushPanelInit", {
+        repoId: "B",
+        repoName: "second",
+        branchName: "feature",
+        remote: "origin",
+      });
+    });
+
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Second repository commit");
+    });
+
+    await act(async () => {
+      oldFiles.resolve([changedFile("old-repository.txt")]);
+      oldRemoteAhead.resolve({
+        commits: [commit("old-remote", "Old remote commit")],
+      });
+      await Promise.all([oldFiles.promise, oldRemoteAhead.promise]);
+    });
+
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Second repository commit");
+      expect(document.body.textContent).not.toContain(
+        "First repository commit",
+      );
+      expect(document.body.textContent).not.toContain("Old remote commit");
+      expect(document.body.textContent).not.toContain("old-repository.txt");
+    });
+  });
+
+  it("clears the previous repository while the next repository is loading", async () => {
+    seedRoot({
+      repoId: "A",
+      repoName: "first",
+      branch: "main",
+      remote: "origin",
+    });
+    const nextBranches =
+      deferred<
+        {
+          name: string;
+          fullRef: string;
+          isRemote: boolean;
+          isCurrent: boolean;
+          isFavorite: boolean;
+          upstream: string;
+          ahead: number;
+          behind: number;
+          lastCommitHash: string;
+        }[]
+      >();
+    let aheadCall = 0;
+
+    responders.getAheadCommits = () => {
+      aheadCall += 1;
+      return aheadCall === 1
+        ? { commits: [commit("old", "Previous repository commit")] }
+        : { commits: [] };
+    };
+    responders.getCommitRangeFiles = () => [];
+    responders.getBranches = () => nextBranches.promise;
+
+    render(<PushApp />);
+
+    await waitFor(() => {
+      expect(
+        (document.querySelector(".push-split-main") as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+
+    act(() => {
+      emit("activeRepoChanged", {
+        repo: { id: "B" },
+        repoName: "second",
+      });
+    });
+
+    await waitFor(() => {
+      expect(lastCall("getBranches")?.[2]).toMatchObject({ repoId: "B" });
+    });
+
+    expect(document.body.textContent).not.toContain(
+      "Previous repository commit",
+    );
+    expect(
+      (document.querySelector(".push-split-main") as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    await act(async () => {
+      nextBranches.resolve([
+        {
+          name: "main",
+          fullRef: "refs/heads/main",
+          isRemote: false,
+          isCurrent: true,
+          isFavorite: false,
+          upstream: "origin/main",
+          ahead: 0,
+          behind: 0,
+          lastCommitHash: "new",
+        },
+      ]);
+      await nextBranches.promise;
+    });
+  });
+
+  it("loads remote branch choices through the current repository binding", async () => {
+    seedRoot({ repoId: "A", branch: "main", remote: "origin" });
+    responders.getAheadCommits = () => ({ commits: [] });
+    responders.getRemoteBranches = () => [
+      { remote: "origin", branches: ["main"] },
+    ];
+
+    render(<PushApp />);
+    fireEvent.click(document.querySelector(".push-route-target") as Element);
+
+    await waitFor(() => {
+      expect(lastCall("getRemoteBranches")?.[2]).toMatchObject({
+        repoId: "A",
+      });
+    });
+  });
+
+  it("reloads ahead commits for a confirmed target branch", async () => {
+    seedRoot({ repoId: "A", branch: "main", remote: "origin" });
+    responders.getAheadCommits = () => ({ commits: [] });
+    responders.getRemoteBranches = () => [
+      { remote: "origin", branches: ["main"] },
+    ];
+
+    render(<PushApp />);
+    fireEvent.click(document.querySelector(".push-route-target") as Element);
+
+    const input = await waitFor(() => {
+      const element = document.querySelector(
+        ".remote-branch-selector__input",
+      ) as HTMLInputElement | null;
+      expect(element).toBeTruthy();
+      return element as HTMLInputElement;
+    });
+    fireEvent.change(input, { target: { value: "feature" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(lastCall("getAheadCommits")?.[1]).toMatchObject({
+        branchName: "feature",
+        remote: "origin",
+      });
     });
   });
 });

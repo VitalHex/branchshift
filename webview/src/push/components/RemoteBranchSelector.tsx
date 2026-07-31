@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { bridge } from "../../shared/bridge";
 
-interface RemoteBranchGroup {
+export interface RemoteBranchGroup {
   remote: string;
   branches: string[];
 }
@@ -12,6 +11,7 @@ interface RemoteBranchSelectorProps {
   onRemoteChange: (remote: string) => void;
   onBranchChange: (branch: string) => void;
   onClose: () => void;
+  loadRemoteBranches: () => Promise<RemoteBranchGroup[] | null>;
 }
 
 /**
@@ -25,6 +25,7 @@ export function RemoteBranchSelector({
   onRemoteChange,
   onBranchChange,
   onClose,
+  loadRemoteBranches,
 }: RemoteBranchSelectorProps) {
   const [remotes, setRemotes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,10 +37,8 @@ export function RemoteBranchSelector({
   useEffect(() => {
     async function fetchRemotes() {
       try {
-        const result = (await bridge.request(
-          "getRemoteBranches",
-          {},
-        )) as RemoteBranchGroup[];
+        const result = await loadRemoteBranches();
+        if (result === null) return;
         const remoteNames = (result ?? []).map((g) => g.remote);
         setRemotes(remoteNames);
       } catch (err) {
@@ -49,7 +48,7 @@ export function RemoteBranchSelector({
       }
     }
     fetchRemotes();
-  }, []);
+  }, [loadRemoteBranches]);
 
   // Auto-focus branch input on mount
   useEffect(() => {

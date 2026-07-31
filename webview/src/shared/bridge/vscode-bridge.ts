@@ -27,9 +27,12 @@ export function createVSCodeBridge(): Bridge {
 
   class BridgeRequestError extends Error {
     readonly code: string;
-    constructor(code: string, message: string) {
+    readonly recovery?: string;
+
+    constructor(code: string, message: string, recovery?: string) {
       super(message);
       this.code = code;
+      this.recovery = recovery;
       this.name = "BridgeRequestError";
     }
   }
@@ -57,6 +60,7 @@ export function createVSCodeBridge(): Bridge {
             new BridgeRequestError(
               resp.error?.code ?? "UNKNOWN",
               resp.error?.message ?? "Unknown error",
+              resp.error?.recovery,
             ),
           );
         }

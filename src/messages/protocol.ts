@@ -1,7 +1,11 @@
 import type { GitRefIdentity } from "../git/branchDashboardState";
 import type { GitService } from "../git/gitService";
 import type { RepoDescriptor, RepositoryPaths } from "../git/repoRegistry";
-import type { GraphLayoutResult, LaneSnapshot } from "../git/types";
+import type {
+  CommitSelection,
+  GraphLayoutResult,
+  LaneSnapshot,
+} from "../git/types";
 
 export type LogQueryRevision =
   | { kind: "all" }
@@ -31,6 +35,13 @@ export type LogQueryResult =
   | ({ status: "ok"; hasMore: boolean } & GraphLayoutResult)
   | { status: "ref-unavailable"; ref: GitRefIdentity };
 
+export interface CommitChangesParams extends Record<string, unknown> {
+  message: string;
+  amend?: boolean;
+  selections?: readonly CommitSelection[];
+  filePaths?: string[];
+}
+
 export interface RequestMessage {
   type: "request";
   id: string;
@@ -47,6 +58,7 @@ export interface ResponseMessage {
   error?: {
     code: ErrorCode;
     message: string;
+    recovery?: string;
   };
 }
 
@@ -207,6 +219,13 @@ export enum ErrorCode {
   BRANCH_NO_UPSTREAM = "BRANCH_NO_UPSTREAM",
   BRANCH_CHECKED_OUT_IN_WORKTREE = "BRANCH_CHECKED_OUT_IN_WORKTREE",
   BRANCH_NON_FAST_FORWARD = "BRANCH_NON_FAST_FORWARD",
+  UNMERGED_PATHS = "UNMERGED_PATHS",
+  INDEX_PREPARE_FAILED = "INDEX_PREPARE_FAILED",
+  INDEX_RESTORE_FAILED = "INDEX_RESTORE_FAILED",
+  PARTIAL_FILE_SELECTION_UNSUPPORTED = "PARTIAL_FILE_SELECTION_UNSUPPORTED",
+  UNSUPPORTED_SHELF_CONTENT = "UNSUPPORTED_SHELF_CONTENT",
+  COMMIT_REJECTED = "COMMIT_REJECTED",
+  OPERATION_CANCELLED = "OPERATION_CANCELLED",
   UNKNOWN = "UNKNOWN",
 }
 

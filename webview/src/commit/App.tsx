@@ -11,6 +11,7 @@ import {
 import { subscribeRepoEvents, useRepoStore } from "../shared/store/repo-store";
 import { CommitTab } from "./components/CommitTab";
 import { IdeaShelfTab } from "./components/IdeaShelfTab";
+import { OperationErrorBanner } from "./components/OperationErrorBanner";
 import { ShelfTab } from "./components/ShelfTab";
 import "./commit.css";
 
@@ -567,6 +568,7 @@ export function CommitApp() {
   const activeTab = useCommitStore((s) => s.activeTab);
   const setActiveTab = useCommitStore((s) => s.setActiveTab);
   const loading = useCommitStore((s) => s.loading);
+  const operationError = useCommitStore((s) => s.operationError);
   const repos = useRepoStore((s) => s.repos);
   const activeRepoId = useRepoStore((s) => s.activeRepoId);
 
@@ -646,6 +648,7 @@ export function CommitApp() {
         repoId={activeRepoId}
       />
       <ProgressBar visible={loading} />
+      <OperationErrorBanner error={operationError} />
       <div className="commit-content">
         {activeTab === "commit" && <CommitTab />}
         {activeTab === "shelf" && <IdeaShelfTab />}

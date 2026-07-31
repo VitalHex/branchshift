@@ -91,6 +91,37 @@ describe("bridge repo context + stale drop", () => {
     window.addEventListener = origAdd;
   });
 
+  it("preserves host error recovery text", async () => {
+    const posted: unknown[] = [];
+    let deliver!: (m: unknown) => void;
+    installAcquire((m) => posted.push(m));
+    const origAdd = window.addEventListener;
+    window.addEventListener = ((
+      type: string,
+      cb: (e: MessageEvent) => void,
+    ) => {
+      if (type === "message") deliver = (m) => cb({ data: m } as MessageEvent);
+    }) as typeof window.addEventListener;
+    const bridge = createVSCodeBridge();
+    const request = bridge.request("commitChanges");
+    const id = (posted[0] as { id: string }).id;
+    deliver({
+      type: "response",
+      id,
+      success: false,
+      error: {
+        code: "COMMIT_REJECTED",
+        message: "commit failed",
+        recovery: "Resolve the conflicts and try again.",
+      },
+    });
+    await expect(request).rejects.toMatchObject({
+      code: "COMMIT_REJECTED",
+      recovery: "Resolve the conflicts and try again.",
+    });
+    window.addEventListener = origAdd;
+  });
+
   it("keeps a global selectRepo request alive across its own context event", async () => {
     const posted: unknown[] = [];
     let deliver!: (m: unknown) => void;

@@ -6,8 +6,12 @@ import { bridge } from "../shared/bridge";
 import { CommitInfo } from "../shared/components/CommitInfo";
 import { FileTree } from "../shared/components/FileTree";
 import { useRepoBoundOperation } from "../shared/hooks/useRepoBoundOperation";
+import { RequestCoordinator } from "../shared/requests/requestCoordinator";
 import type { BranchInfo, Commit, DiffFile } from "../shared/types/git";
-import { RemoteBranchSelector } from "./components/RemoteBranchSelector";
+import {
+  type RemoteBranchGroup,
+  RemoteBranchSelector,
+} from "./components/RemoteBranchSelector";
 import { useDraggableDivider } from "./hooks/useDraggableDivider";
 import { formatRemoteBranchLabel } from "./utils/branchUtils";
 import "./push.css";
@@ -71,6 +75,18 @@ export function PushApp() {
   const root = document.getElementById("root");
   const initialBranch = root?.dataset.branch ?? "";
   const initialRemote = root?.dataset.remote ?? "origin";
+  const [coordinator] = useState(() => {
+    const instance = new RequestCoordinator();
+    instance.setRepository(root?.dataset.repoId?.trim() || null);
+    return instance;
+  });
+  const advanceRequestRepository = useCallback(
+    (repoId: string | null) => {
+      coordinator.setRepository(null);
+      if (repoId !== null) coordinator.setRepository(repoId);
+    },
+    [coordinator],
+  );
 
   // branchName is now state so it can be reloaded when the active repo changes
   // (via useRepoBoundOperation). It is seeded from the host-supplied dataset
@@ -80,6 +96,8 @@ export function PushApp() {
 
   const [commits, setCommits] = useState<Commit[]>([]);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
+  const selectedHashRef = useRef(selectedHash);
+  selectedHashRef.current = selectedHash;
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +110,10 @@ export function PushApp() {
   // Editable remote branch target state
   const [targetRemote, setTargetRemote] = useState(initialRemote);
   const [targetBranch, setTargetBranch] = useState(initialBranch);
+  const targetRef = useRef({
+    remote: initialRemote,
+    branch: initialBranch,
+  });
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"tree" | "flat">("tree");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -151,26 +173,37 @@ export function PushApp() {
   // stable wrapper that delegates to the latest `loadRepo` via the ref, so
   // `loadRepo` can be defined AFTER the hook (and thus use its `request`).
   const loadRepoRef = useRef<(() => Promise<void>) | null>(null);
-  const onFollowRepo = useCallback((repoId: string | null) => {
-    // Task 24 (P2#10): when every repo is removed, the host broadcasts
-    // activeRepoChanged{repo:null}. Don't issue a repo-bound request (there is
-    // no repo to bind to); clear the displayed state instead. Otherwise the
-    // bound `request` would carry repoId=undefined and the host's strict-repo
-    // guard would reject it as REPO_NOT_FOUND.
-    if (repoId === null) {
-      setBranchName("");
-      setTargetBranch("");
-      setTargetRemote("origin");
-      setCommits([]);
-      setSelectedHash(null);
-      setFiles([]);
-      return;
-    }
-    // Delegate to the latest loadRepo; no-op if it hasn't been assigned yet.
-    // The repoId is ignored here because the bound `request` already carries
-    // the authoritative repo (the hook bumped bridge context before calling).
-    return loadRepoRef.current?.();
+  const clearRepositoryState = useCallback(() => {
+    setBranchName("");
+    setTargetBranch("");
+    setTargetRemote("origin");
+    targetRef.current = { remote: "origin", branch: "" };
+    setCommits([]);
+    selectedHashRef.current = null;
+    setSelectedHash(null);
+    setFiles([]);
+    setSelectorOpen(false);
+    setShowPushMenu(false);
+    setCollapsed({});
+    setError(null);
   }, []);
+  const onFollowRepo = useCallback(
+    (repoId: string | null) => {
+      advanceRequestRepository(repoId);
+      clearRepositoryState();
+      // When every repo is removed, the host broadcasts
+      // activeRepoChanged{repo:null}. Don't issue a repo-bound request (there is
+      // no repo to bind to); clear the displayed state instead. Otherwise the
+      // bound `request` would carry repoId=undefined and the host's strict-repo
+      // guard would reject it as REPO_NOT_FOUND.
+      if (repoId === null) return;
+      // Delegate to the latest loadRepo; no-op if it hasn't been assigned yet.
+      // The repoId is ignored here because the bound `request` already carries
+      // the authoritative repo (the hook bumped bridge context before calling).
+      return loadRepoRef.current?.();
+    },
+    [advanceRequestRepository, clearRepositoryState],
+  );
 
   // Authoritative repo binding + bound request. The busy flag includes the
   // rejected dialog so idle-follow stays suppressed while the user decides how
@@ -183,24 +216,36 @@ export function PushApp() {
   const loadAheadCommits = useCallback(
     async (branch: string, remote: string) => {
       try {
-        const result = (await request("getAheadCommits", {
-          branchName: branch,
-          remote,
-        })) as { commits: Commit[] } | null;
-        const list = result?.commits ?? [];
-        setCommits(list);
-        if (list.length > 0) {
-          setSelectedHash(list[0].hash);
-        } else {
-          setSelectedHash(null);
-        }
+        await coordinator.runLatest(
+          "push.ahead",
+          () =>
+            request("getAheadCommits", {
+              branchName: branch,
+              remote,
+            }) as Promise<{ commits: Commit[] } | null>,
+          (result) => {
+            const list = result?.commits ?? [];
+            const nextSelectedHash = list[0]?.hash ?? null;
+            setCommits(list);
+            if (nextSelectedHash !== selectedHashRef.current) {
+              setFiles([]);
+              void coordinator.runLatest(
+                "push.commitFiles",
+                () => Promise.resolve<DiffFile[]>([]),
+                () => {},
+              );
+              selectedHashRef.current = nextSelectedHash;
+              setSelectedHash(nextSelectedHash);
+            }
+          },
+        );
       } catch (err) {
         console.error("Failed to load ahead commits:", err);
       }
     },
     // `request` is stable from the hook (useCallback, [] deps), but it is a
     // render-scoped binding, so list it for correctness if it ever changes.
-    [request],
+    [coordinator, request],
   );
 
   // (Re)load repo-specific data: current branch, derived remote, ahead commits.
@@ -208,34 +253,44 @@ export function PushApp() {
   // through the bound `request` so it carries the panel's authoritative repoId.
   const loadRepo = useCallback(async () => {
     try {
-      const result = (await request("getBranches")) as
-        | BranchInfo[]
-        | { status: string }
-        | null;
-      if (!Array.isArray(result)) {
-        setBranchName("");
-        setTargetBranch("");
-        setTargetRemote("origin");
-        setCommits([]);
-        setSelectedHash(null);
-        setFiles([]);
-        return;
-      }
-      const current = result.find((b) => b.isCurrent);
-      const branch = current?.name ?? "";
-      const remote = current?.upstream?.split("/")[0] ?? "origin";
-      setBranchName(branch);
-      setTargetBranch(branch);
-      setTargetRemote(remote);
-      // Clear commit / file selection before reloading ahead commits.
-      setSelectedHash(null);
-      setFiles([]);
-      setCollapsed({});
-      await loadAheadCommits(branch, remote);
+      await coordinator.runLatest(
+        "push.targetValidation",
+        () =>
+          request("getBranches") as Promise<
+            BranchInfo[] | { status: string } | null
+          >,
+        (result) => {
+          if (!Array.isArray(result)) {
+            setBranchName("");
+            setTargetBranch("");
+            setTargetRemote("origin");
+            targetRef.current = { remote: "origin", branch: "" };
+            setCommits([]);
+            selectedHashRef.current = null;
+            setSelectedHash(null);
+            setFiles([]);
+            setSelectorOpen(false);
+            return;
+          }
+          const current = result.find((b) => b.isCurrent);
+          const branch = current?.name ?? "";
+          const remote = current?.upstream?.split("/")[0] ?? "origin";
+          setBranchName(branch);
+          setTargetBranch(branch);
+          setTargetRemote(remote);
+          targetRef.current = { remote, branch };
+          selectedHashRef.current = null;
+          setSelectedHash(null);
+          setFiles([]);
+          setSelectorOpen(false);
+          setCollapsed({});
+          void loadAheadCommits(branch, remote);
+        },
+      );
     } catch (err) {
       console.error("Failed to load repo for push panel:", err);
     }
-  }, [request, loadAheadCommits]);
+  }, [coordinator, request, loadAheadCommits]);
   // Wire the ref so the hook's onFollow wrapper reaches the real loadRepo.
   loadRepoRef.current = loadRepo;
 
@@ -271,6 +326,8 @@ export function PushApp() {
       },
     ) => {
       if (!claimSeq(seq)) return;
+      const nextRepoId = payload.repoId ?? repoId;
+      advanceRequestRepository(nextRepoId);
       if (payload.repoId !== undefined) {
         bindRepo(payload.repoId, payload.repoName?.trim() ?? "");
       }
@@ -279,12 +336,15 @@ export function PushApp() {
       setBranchName(branch);
       setTargetBranch(branch);
       setTargetRemote(remote);
+      targetRef.current = { remote, branch };
+      selectedHashRef.current = null;
       setSelectedHash(null);
       setFiles([]);
+      setSelectorOpen(false);
       setCollapsed({});
       void loadAheadCommits(branch, remote);
     },
-    [claimSeq, bindRepo, loadAheadCommits],
+    [claimSeq, repoId, advanceRequestRepository, bindRepo, loadAheadCommits],
   );
 
   // Listen for re-init events (when panel is reused). Deferred while the panel
@@ -348,20 +408,29 @@ export function PushApp() {
   useEffect(() => {
     if (!selectedHash) {
       setFiles([]);
+      void coordinator.runLatest(
+        "push.commitFiles",
+        () => Promise.resolve<DiffFile[]>([]),
+        () => {},
+      );
       return;
     }
     async function load() {
       try {
-        const result = (await request("getCommitRangeFiles", {
-          hashes: [selectedHash],
-        })) as DiffFile[] | null;
-        setFiles(result ?? []);
+        await coordinator.runLatest(
+          "push.commitFiles",
+          () =>
+            request("getCommitRangeFiles", {
+              hashes: [selectedHash],
+            }) as Promise<DiffFile[] | null>,
+          (result) => setFiles(result ?? []),
+        );
       } catch (err) {
         console.error("Failed to load commit files:", err);
       }
     }
     load();
-  }, [selectedHash, request]);
+  }, [coordinator, selectedHash, request]);
 
   const handlePush = useCallback(
     async (force = false) => {
@@ -379,7 +448,7 @@ export function PushApp() {
         const message = isUpToDate
           ? "Everything is up to date"
           : `Pushed ${commits.length} commit${commits.length !== 1 ? "s" : ""} to ${targetRemote}/${targetBranch}`;
-        // Show VS Code native notification then close. These are repo-agnostic
+        // Show a native notification then close. These are repo-agnostic
         // control-plane calls → { scope: "global" } (no repoId attached).
         bridge
           .request("showInfoNotification", { message }, { scope: "global" })
@@ -516,20 +585,51 @@ export function PushApp() {
     }
   }, [request]);
 
-  const handleBranchSelect = useCallback((branch: string) => {
-    setTargetBranch(branch);
-    setSelectorOpen(false);
-  }, []);
+  const applyTarget = useCallback(
+    (next: { remote: string; branch: string }, closeSelector: boolean) => {
+      targetRef.current = next;
+      void coordinator.runLatest(
+        "push.targetValidation",
+        () => Promise.resolve(next),
+        ({ remote, branch }) => {
+          setTargetRemote(remote);
+          setTargetBranch(branch);
+          if (closeSelector) setSelectorOpen(false);
+          void loadAheadCommits(branch, remote);
+        },
+      );
+    },
+    [coordinator, loadAheadCommits],
+  );
+
+  const handleBranchSelect = useCallback(
+    (branch: string) => {
+      applyTarget({ ...targetRef.current, branch }, true);
+    },
+    [applyTarget],
+  );
 
   const handleRemoteSelect = useCallback(
     (remote: string) => {
-      setTargetRemote(remote);
-      // Reloading ahead commits against the newly chosen remote mirrors the
-      // previous effect that was keyed on [branchName, targetRemote].
-      void loadAheadCommits(targetBranch, remote);
+      applyTarget({ ...targetRef.current, remote }, false);
     },
-    [loadAheadCommits, targetBranch],
+    [applyTarget],
   );
+
+  const loadRemoteBranches = useCallback(async () => {
+    let branches: RemoteBranchGroup[] | null = null;
+    const result = await coordinator.runLatest(
+      "push.remoteBranches",
+      () =>
+        request<RemoteBranchGroup[] | null>("getRemoteBranches", {}) as Promise<
+          RemoteBranchGroup[] | null
+        >,
+      (value) => {
+        branches = value ?? [];
+      },
+    );
+    return result === "applied" ? branches : null;
+  }, [coordinator, request]);
 
   const handleSelectorClose = useCallback(() => {
     setSelectorOpen(false);
@@ -538,6 +638,21 @@ export function PushApp() {
   const handleLabelClick = useCallback(() => {
     setSelectorOpen((prev) => !prev);
   }, []);
+
+  const handleCommitSelect = useCallback(
+    (hash: string) => {
+      if (hash === selectedHashRef.current) return;
+      setFiles([]);
+      void coordinator.runLatest(
+        "push.commitFiles",
+        () => Promise.resolve<DiffFile[]>([]),
+        () => {},
+      );
+      selectedHashRef.current = hash;
+      setSelectedHash(hash);
+    },
+    [coordinator],
+  );
 
   // Clear the captured recovery context when the rejected dialog is dismissed
   // (Cancel) so a stale snapshot can't be reused by a later recovery attempt.
@@ -588,6 +703,7 @@ export function PushApp() {
             onRemoteChange={handleRemoteSelect}
             onBranchChange={handleBranchSelect}
             onClose={handleSelectorClose}
+            loadRemoteBranches={loadRemoteBranches}
           />
         )}
       </div>
@@ -603,7 +719,7 @@ export function PushApp() {
               <div
                 key={c.hash}
                 className={`push-commit-item${selectedHash === c.hash ? " selected" : ""}`}
-                onClick={() => setSelectedHash(c.hash)}
+                onClick={() => handleCommitSelect(c.hash)}
               >
                 <span className="push-commit-subject">{c.subject}</span>
               </div>

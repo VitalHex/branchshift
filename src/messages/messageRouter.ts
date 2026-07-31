@@ -102,8 +102,8 @@ export class MessageRouter {
         return;
       }
 
-      // Before Task 4 installs a resolver, only requests without an explicit repo
-      // stay on the legacy path. An explicit id is never allowed to fall through.
+      // Without a resolver, only requests without an explicit repo continue on
+      // the active-repository path. An explicit id is never allowed to fall through.
       if (!this.repoResolver && msg.repoId) {
         this.sendResponse(webview, msg.id, false, undefined, {
           code: ErrorCode.REPO_NOT_FOUND,
@@ -137,6 +137,9 @@ export class MessageRouter {
             ? (err.code as ErrorCode)
             : ErrorCode.UNKNOWN,
         message,
+        ...(err instanceof BranchShiftError && err.recovery !== undefined
+          ? { recovery: err.recovery }
+          : {}),
       });
     }
   }
@@ -146,7 +149,7 @@ export class MessageRouter {
     id: string,
     success: boolean,
     data?: unknown,
-    error?: { code: ErrorCode; message: string },
+    error?: { code: ErrorCode; message: string; recovery?: string },
   ): void {
     const response: ResponseMessage = {
       type: "response",

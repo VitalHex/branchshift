@@ -1,5 +1,6 @@
 import * as assert from "node:assert";
 import type * as vscode from "vscode";
+import { BranchShiftError, BranchShiftErrorCode } from "../../git/errors";
 import { GitService } from "../../git/gitService";
 import {
   type CommandHandler,
@@ -26,6 +27,30 @@ interface RouterWithHandleRequest {
 }
 
 describe("MessageRouter repo context", () => {
+  it("preserves the typed selected-commit error code and recovery", async () => {
+    const router = new MessageRouter();
+    router.handle("getStatus", async () => {
+      throw new BranchShiftError(
+        BranchShiftErrorCode.PARTIAL_FILE_SELECTION_UNSUPPORTED,
+        "Cannot commit only the workspace row.",
+        "Include the staged row and retry.",
+      );
+    });
+    const responses: ResponseMessage[] = [];
+    const webview = fakeWebview((message) => responses.push(message));
+
+    await (router as unknown as RouterWithHandleRequest).handleRequest(
+      webview,
+      { type: "request", id: "recovery", command: "getStatus", params: {} },
+    );
+
+    assert.deepStrictEqual(responses[0].error, {
+      code: "PARTIAL_FILE_SELECTION_UNSUPPORTED",
+      message: "Cannot commit only the workspace row.",
+      recovery: "Include the staged row and retry.",
+    });
+  });
+
   it("resolves and passes RequestContext to handler", async () => {
     const router = new MessageRouter();
     const paths = {

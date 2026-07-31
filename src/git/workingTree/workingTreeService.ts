@@ -1,0 +1,72 @@
+import type { GitExecutor } from "../core/gitExecutor";
+import type { DiffFile, FileStatus, WorkingTreeFile } from "../types";
+import { parseNameStatusZ } from "./nameStatusParser";
+import { type GitStatusRecord, parseStatusPorcelainZ } from "./statusParser";
+
+export class WorkingTreeService {
+  constructor(private readonly git: GitExecutor) {}
+
+  async getStatus(): Promise<FileStatus[]> {
+    return parseStatusPorcelainZ(
+      await this.git.buffer(["status", "--porcelain=v1", "-z", "-uall"]),
+    );
+  }
+
+  async getWorkingTreeChanges(): Promise<WorkingTreeFile[]> {
+    return (await this.getStatus()).flatMap((record) =>
+      this.toWorkingTreeFiles(record),
+    );
+  }
+
+  async getCommitFiles(hash: string): Promise<DiffFile[]> {
+    return parseNameStatusZ(
+      await this.git.buffer([
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "-r",
+        "--name-status",
+        "-z",
+        "-M",
+        "-C",
+        hash,
+      ]),
+    );
+  }
+
+  getIndexFileContent(path: string): Promise<Buffer> {
+    return this.git.buffer(["show", `:${path}`]);
+  }
+
+  private toWorkingTreeFiles(record: GitStatusRecord): WorkingTreeFile[] {
+    const { path, oldPath, indexStatus, workTreeStatus } = record;
+    if (indexStatus === "!" && workTreeStatus === "!") return [];
+    const staged =
+      indexStatus !== " " && indexStatus !== "?" && indexStatus !== "!";
+    const status = this.toWorkingTreeStatus(record);
+    if (staged && ![" ", "?", "!"].includes(workTreeStatus))
+      return [
+        { path, oldPath, status, staged: true },
+        { path, oldPath, status: "modified", staged: false },
+      ];
+    return [{ path, oldPath, status, staged }];
+  }
+
+  private toWorkingTreeStatus(
+    record: GitStatusRecord,
+  ): WorkingTreeFile["status"] {
+    const { indexStatus, workTreeStatus } = record;
+    if (indexStatus === "?" && workTreeStatus === "?") return "untracked";
+    if (
+      indexStatus === "U" ||
+      workTreeStatus === "U" ||
+      (indexStatus === "A" && workTreeStatus === "A") ||
+      (indexStatus === "D" && workTreeStatus === "D")
+    )
+      return "conflicted";
+    if (indexStatus === "A" || workTreeStatus === "A") return "added";
+    if (indexStatus === "D" || workTreeStatus === "D") return "deleted";
+    if (indexStatus === "R" || workTreeStatus === "R") return "renamed";
+    return "modified";
+  }
+}

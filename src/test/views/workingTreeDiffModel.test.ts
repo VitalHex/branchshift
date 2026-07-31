@@ -1,0 +1,121 @@
+import * as assert from "node:assert";
+import {
+  buildGitContentQuery,
+  getWorkingTreeDiffKind,
+  getWorkingTreeDiffResources,
+  readGitContent,
+  WORKING_INDEX_REF,
+} from "../../views/workingTreeDiffModel";
+
+describe("working tree diff model", () => {
+  it("maps staged changes from the current commit to the index", () => {
+    assert.deepStrictEqual(getWorkingTreeDiffKind(true), {
+      left: "head",
+      right: "index",
+    });
+  });
+
+  it("maps unstaged changes from the index to the working tree", () => {
+    assert.deepStrictEqual(getWorkingTreeDiffKind(false), {
+      left: "index",
+      right: "workingTree",
+    });
+  });
+
+  it("uses an empty left side for additions and an empty right side for deletions", () => {
+    assert.deepStrictEqual(
+      getWorkingTreeDiffResources({
+        path: "added.txt",
+        status: "added",
+        staged: true,
+      }),
+      {
+        left: { source: "empty", path: "added.txt" },
+        right: { source: "git", ref: WORKING_INDEX_REF, path: "added.txt" },
+      },
+    );
+    assert.deepStrictEqual(
+      getWorkingTreeDiffResources({
+        path: "deleted.txt",
+        status: "deleted",
+        staged: false,
+      }),
+      {
+        left: {
+          source: "git",
+          ref: WORKING_INDEX_REF,
+          path: "deleted.txt",
+        },
+        right: { source: "empty", path: "deleted.txt" },
+      },
+    );
+  });
+
+  it("uses the old path on the commit side of a staged rename", () => {
+    assert.deepStrictEqual(
+      getWorkingTreeDiffResources({
+        path: "new-name.txt",
+        oldPath: "old-name.txt",
+        status: "renamed",
+        staged: true,
+      }),
+      {
+        left: { source: "git", ref: "HEAD", path: "old-name.txt" },
+        right: {
+          source: "git",
+          ref: WORKING_INDEX_REF,
+          path: "new-name.txt",
+        },
+      },
+    );
+  });
+});
+
+describe("working index content", () => {
+  it("retains index identity and repository identity in the content URI", () => {
+    const params = new URLSearchParams(
+      buildGitContentQuery(WORKING_INDEX_REF, "repo-B"),
+    );
+    assert.strictEqual(params.get("ref"), WORKING_INDEX_REF);
+    assert.strictEqual(params.get("repo"), "repo-B");
+  });
+
+  it("reads the sentinel through the selected repository index", async () => {
+    let indexPath = "";
+    const service = {
+      getIndexFileContent: async (filePath: string) => {
+        indexPath = filePath;
+        return Buffer.from("index contents");
+      },
+      readFileContent: async () => {
+        throw new Error("commit content should not be read");
+      },
+    };
+
+    const content = await readGitContent(
+      service,
+      WORKING_INDEX_REF,
+      "folder/file.txt",
+    );
+
+    assert.strictEqual(content.toString("utf8"), "index contents");
+    assert.strictEqual(indexPath, "folder/file.txt");
+  });
+
+  it("does not convert an index read failure into empty content", async () => {
+    const failure = new Error("index read failed");
+
+    await assert.rejects(
+      readGitContent(
+        {
+          getIndexFileContent: async () => {
+            throw failure;
+          },
+        },
+        WORKING_INDEX_REF,
+        "file.txt",
+      ),
+      failure,
+    );
+  });
+});

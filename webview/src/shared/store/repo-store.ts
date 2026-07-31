@@ -7,6 +7,10 @@ export interface RepoDescriptorView {
   rootPath: string;
 }
 
+interface DeferredRepoContext {
+  id: string | null;
+}
+
 interface RepoStore {
   repos: RepoDescriptorView[];
   activeRepoId: string | null;
@@ -64,6 +68,41 @@ export const useRepoStore = create<RepoStore>((set) => ({
   },
 }));
 
+let repoOperationDepth = 0;
+let deferredRepoContext: DeferredRepoContext | undefined;
+
+/**
+ * Keep repository-bound Commit mutations attached to their original context.
+ * The host has no cancellation contract for destructive Git operations, so a
+ * repository change must wait until the mutation's response has been handled.
+ */
+export function beginRepoOperation(): () => void {
+  repoOperationDepth += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    repoOperationDepth = Math.max(0, repoOperationDepth - 1);
+    if (repoOperationDepth !== 0 || deferredRepoContext === undefined) return;
+    const next = deferredRepoContext;
+    deferredRepoContext = undefined;
+    applyRepoContext(next.id);
+  };
+}
+
+function applyRepoContext(repoId: string | null): void {
+  bridge.setRepoContext(repoId);
+  useRepoStore.setState({ activeRepoId: repoId });
+}
+
+function applyOrDeferRepoContext(repoId: string | null): void {
+  if (repoOperationDepth > 0) {
+    deferredRepoContext = { id: repoId };
+    return;
+  }
+  applyRepoContext(repoId);
+}
+
 // Subscribe to backend-driven changes once.
 let subscribed = false;
 export function subscribeRepoEvents() {
@@ -73,15 +112,14 @@ export function subscribeRepoEvents() {
     if (event === "activeRepoChanged") {
       const repo = (data as { repo: RepoDescriptorView | null }).repo;
       const id = repo?.id ?? null;
-      bridge.setRepoContext(id);
-      useRepoStore.setState({ activeRepoId: id });
+      applyOrDeferRepoContext(id);
     } else if (event === "reposChanged") {
       const d = data as {
         repos: RepoDescriptorView[];
         activeId: string | null;
       };
-      bridge.setRepoContext(d.activeId);
-      useRepoStore.setState({ repos: d.repos, activeRepoId: d.activeId });
+      useRepoStore.setState({ repos: d.repos });
+      applyOrDeferRepoContext(d.activeId);
     }
   });
 }

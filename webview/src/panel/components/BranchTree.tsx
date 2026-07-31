@@ -11,6 +11,10 @@ import type {
   TagInfo,
 } from "../../shared/types/git";
 import {
+  type BranchTreeNode,
+  buildBranchTreeSnapshot,
+} from "../models/branchTreeModel";
+import {
   branchIdentity,
   compareFavoriteRefs,
   refKey,
@@ -257,25 +261,6 @@ function sortTreeNodes(nodes: TreeNode[]): void {
   }
 }
 
-function branchesToTree(branches: BranchInfo[]): TreeNode[] {
-  return buildTree(
-    branches.map((b) => ({
-      segments: b.name.split("/"),
-      branch: b,
-    })),
-  );
-}
-
-function branchesToFlatTree(branches: BranchInfo[]): TreeNode[] {
-  return [...branches].sort(compareFavoriteRefs).map((b) => ({
-    name: b.name,
-    fullPath: b.name,
-    children: [],
-    branch: b,
-    isLeaf: true,
-  }));
-}
-
 function tagsToTree(tags: TagInfo[]): TreeNode[] {
   return buildTree(
     tags.map((t) => ({
@@ -300,18 +285,19 @@ function tagsToFlatTree(tags: TagInfo[]): TreeNode[] {
 // ---------------------------------------------------------------------------
 
 function collectVisibleRefs(
-  nodes: TreeNode[],
+  nodes: readonly (TreeNode | BranchTreeNode)[],
   collapsed: Record<string, boolean>,
   groupPrefix: string,
 ): GitRefIdentity[] {
   const result: GitRefIdentity[] = [];
   for (const node of nodes) {
-    if (node.isLeaf && node.branch) {
+    if (node.isLeaf && "branch" in node && node.branch) {
       result.push(branchIdentity(node.branch));
-    } else if (node.isLeaf && node.tag) {
+    } else if (node.isLeaf && "tag" in node && node.tag) {
       result.push(tagIdentity(node.tag));
     } else {
-      const collapseKey = `${groupPrefix}:${node.fullPath}`;
+      const collapseKey =
+        "id" in node ? node.id : `${groupPrefix}:${node.fullPath}`;
       if (!collapsed[collapseKey]) {
         result.push(
           ...collectVisibleRefs(node.children, collapsed, groupPrefix),
@@ -434,13 +420,38 @@ export function BranchTree({
   const headBranch = localBranches.find((b) => b.isCurrent);
   const headCommit = commits.find((c) => c.refs.some((r) => r.type === "HEAD"));
 
-  const localTreeRaw = branchGroupByDirectory
-    ? branchesToTree(localBranches)
-    : branchesToFlatTree(localBranches);
-  const localTree = localTreeRaw;
-  const remoteTree = branchGroupByDirectory
-    ? branchesToTree(remoteBranches)
-    : branchesToFlatTree(remoteBranches);
+  const favoriteRefs = new Set(
+    branches
+      .filter((branch) => branch.isFavorite)
+      .map((branch) => branch.fullRef),
+  );
+  const localSnapshot = buildBranchTreeSnapshot(localBranches, {
+    grouped: branchGroupByDirectory,
+    favoriteRefs,
+  });
+  const remoteSnapshot = buildBranchTreeSnapshot(remoteBranches, {
+    grouped: branchGroupByDirectory,
+    favoriteRefs,
+  });
+  const localTree = localSnapshot.roots;
+  const remoteTree = remoteSnapshot.roots;
+
+  useEffect(() => {
+    const branchNodeIds = new Set([
+      ...localSnapshot.nodeIds,
+      ...remoteSnapshot.nodeIds,
+    ]);
+    setCollapsed((previous) => {
+      const next = Object.fromEntries(
+        Object.entries(previous).filter(
+          ([key]) => !key.startsWith("dir:") || branchNodeIds.has(key),
+        ),
+      );
+      return Object.keys(next).length === Object.keys(previous).length
+        ? previous
+        : next;
+    });
+  }, [localSnapshot, remoteSnapshot]);
   const filteredTags = tags.filter(
     (t) =>
       !searchQuery || t.name.toLowerCase().includes(searchQuery.toLowerCase()),
@@ -695,7 +706,7 @@ export function BranchTree({
         >
           {localTree.map((node) => (
             <TreeNodeView
-              key={node.fullPath}
+              key={node.id}
               node={node}
               depth={0}
               groupPrefix="local"
@@ -720,7 +731,7 @@ export function BranchTree({
         >
           {remoteTree.map((node) => (
             <TreeNodeView
-              key={node.fullPath}
+              key={node.id}
               node={node}
               depth={0}
               groupPrefix="remote"
@@ -883,7 +894,7 @@ function TreeNodeView({
   collapsed,
   onToggle,
 }: {
-  node: TreeNode;
+  node: BranchTreeNode;
   depth: number;
   groupPrefix: string;
   currentBranch: string;
@@ -896,7 +907,7 @@ function TreeNodeView({
   collapsed: Record<string, boolean>;
   onToggle: (key: string) => void;
 }) {
-  const collapseKey = `${groupPrefix}:${node.fullPath}`;
+  const collapseKey = node.id;
 
   const branch = node.branch;
   if (node.isLeaf && branch) {
@@ -965,7 +976,7 @@ function TreeNodeView({
       {!isCollapsed &&
         node.children.map((child) => (
           <TreeNodeView
-            key={child.fullPath}
+            key={child.id}
             node={child}
             depth={depth + 1}
             groupPrefix={groupPrefix}
