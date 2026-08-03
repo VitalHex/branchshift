@@ -263,7 +263,7 @@ describe("BranchTree unified refs", () => {
     );
   });
 
-  it("disables Update in the branch context menu when upstream is missing", () => {
+  it("keeps disabled menu actions focusable without dispatching them", () => {
     seedTree(true);
     const { getByText, getByLabelText } = renderWithStore(<BranchTree />);
 
@@ -274,11 +274,49 @@ describe("BranchTree unified refs", () => {
     const update = getByLabelText("Update");
     expect(update.getAttribute("role")).toBe("menuitem");
     expect(update.getAttribute("aria-disabled")).toBe("true");
+    expect(update.hasAttribute("disabled")).toBe(false);
+    expect((update as HTMLElement).tabIndex).toBe(0);
+    (update as HTMLElement).focus();
+    expect(document.activeElement).toBe(update);
+
     fireEvent.click(update);
+    fireEvent.keyDown(update, { key: "Enter" });
+    fireEvent.keyDown(update, { key: " " });
 
     expect(bridgeWithProgress).not.toHaveBeenCalledWith(
       "updateBranch",
       expect.anything(),
+    );
+  });
+
+  it.each([
+    ["Enter", "Enter"],
+    ["Space", " "],
+  ])("activates an enabled menu action exactly once with %s", async (_label, key) => {
+    seedTree(true);
+    useRepoStore.setState({ activeRepoId: "repo-tree" });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.keyDown(
+      view.getByRole("menuitem", { name: "Compare with Current" }),
+      { key },
+    );
+
+    await waitFor(() => expect(bridge.request).toHaveBeenCalledTimes(1));
+    expect(bridge.request).toHaveBeenCalledWith(
+      "openCompareWithCurrent",
+      {
+        ref: {
+          type: "local",
+          name: "feature/plain",
+          fullRef: "refs/heads/feature/plain",
+        },
+      },
+      { repoId: "repo-tree" },
     );
   });
 

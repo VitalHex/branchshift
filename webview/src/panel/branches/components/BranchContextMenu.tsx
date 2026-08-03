@@ -116,12 +116,19 @@ export function BranchContextMenu({
             key={item.id}
             type="button"
             role="menuitem"
-            disabled={!item.enabled}
+            tabIndex={0}
             aria-label={item.label}
             aria-disabled={!item.enabled || undefined}
             aria-description={item.disabledReason}
             title={item.disabledReason}
-            onClick={item.enabled ? () => onAction(item.id) : undefined}
+            onClick={() => {
+              if (item.enabled) onAction(item.id);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              if (item.enabled) onAction(item.id);
+            }}
             style={{
               width: "100%",
               border: 0,
