@@ -98,6 +98,7 @@ function comparisonHistory(revision: LogQueryRevision) {
 
 describe("git log store instances", () => {
   it("exposes an instance-bound action facade for fixed and ordinary surfaces", async () => {
+    vi.useFakeTimers();
     const fixedRequest = vi.fn().mockResolvedValue(undefined);
     const fixed = createGitLogStore({
       repoId: "repo-fixed",
@@ -155,6 +156,42 @@ describe("git log store instances", () => {
       { repoId: "repo-active" },
     );
 
+    useRepoStore.setState({ activeRepoId: "repo-b" });
+    ordinaryRequest.mockClear();
+    await ordinary.store
+      .getState()
+      .requestFromSurface(
+        "checkoutBranch",
+        { branchName: "feature" },
+        { repoId: "repo-a" },
+      );
+    expect(ordinaryRequest).toHaveBeenCalledWith(
+      "checkoutBranch",
+      { branchName: "feature" },
+      { repoId: "repo-a" },
+    );
+
+    ordinaryRequest.mockClear();
+    const operation = ordinary.store
+      .getState()
+      .requestWithProgressFromSurface(
+        "updateBranch",
+        { branchName: "feature" },
+        { repoId: "repo-a" },
+      );
+    expect(ordinaryRequest).toHaveBeenCalledWith(
+      "updateBranch",
+      { branchName: "feature" },
+      { repoId: "repo-a" },
+    );
+    expect(ordinary.store.getState().operationInProgress).toBe(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    expect(ordinary.store.getState().operationInProgress).toBe(true);
+    await vi.runAllTimersAsync();
+    await operation;
+    expect(ordinary.store.getState().operationInProgress).toBe(false);
+
+    useRepoStore.setState({ activeRepoId: "repo-active" });
     ordinaryRequest.mockClear();
     await ordinary.store.getState().openDiffEditor("commit-a", {
       status: "M",
@@ -198,6 +235,50 @@ describe("git log store instances", () => {
 
     instance.dispose();
     vi.useRealTimers();
+  });
+
+  it("keeps global surface requests unbound from repositories", async () => {
+    vi.useFakeTimers();
+    const request = vi.fn().mockResolvedValue(undefined);
+    const instance = createGitLogStore({
+      repoId: null,
+      history: { kind: "ordinary" },
+      followGlobalActiveRepo: true,
+      showCurrentReachability: true,
+      bridge: createFakeBridge(request).bridge,
+    });
+    useRepoStore.setState({ activeRepoId: "repo-active" });
+
+    await instance.store
+      .getState()
+      .requestFromSurface(
+        "showInfoNotification",
+        { message: "ready" },
+        { scope: "global", repoId: "repo-conflict" },
+      );
+    expect(request).toHaveBeenLastCalledWith(
+      "showInfoNotification",
+      { message: "ready" },
+      { scope: "global" },
+    );
+
+    const operation = instance.store
+      .getState()
+      .requestWithProgressFromSurface(
+        "showInfoNotification",
+        { message: "working" },
+        { scope: "global", repoId: "repo-conflict" },
+      );
+    expect(instance.store.getState().operationInProgress).toBe(false);
+    expect(request).toHaveBeenLastCalledWith(
+      "showInfoNotification",
+      { message: "working" },
+      { scope: "global" },
+    );
+    await vi.runAllTimersAsync();
+    await operation;
+
+    instance.dispose();
   });
 
   it("keeps mutations and async graph results isolated", async () => {
@@ -1658,6 +1739,40 @@ describe("panel-store ref selection", () => {
     });
     expect(usePanelStore.getState().branches[0].isFavorite).toBe(false);
     expect(usePanelStore.getState().tags[0].isFavorite).toBe(true);
+  });
+
+  it("does not patch the newly active repository when an explicit favorite request settles", async () => {
+    const request = vi.mocked(bridge.request);
+    const pending = deferred<unknown>();
+    request.mockImplementationOnce(() => pending.promise);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+
+    const favoriteRequest = usePanelStore
+      .getState()
+      .setFavorite(localMain, true, "repo-a");
+
+    useRepoStore.setState({ activeRepoId: "repo-b" });
+    usePanelStore.setState({
+      branches: [
+        {
+          name: "main",
+          fullRef: "refs/heads/main",
+          isRemote: false,
+          isCurrent: true,
+          isFavorite: false,
+        } as never,
+      ],
+      tags: [],
+    });
+    pending.resolve(undefined);
+    await favoriteRequest;
+
+    expect(request).toHaveBeenCalledWith(
+      "setFavorite",
+      { ref: localMain, favorite: true },
+      { repoId: "repo-a" },
+    );
+    expect(usePanelStore.getState().branches[0].isFavorite).toBe(false);
   });
 
   it("loads and persists branch dashboard preferences", async () => {
