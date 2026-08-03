@@ -1,0 +1,339 @@
+import { describe, expect, it, vi } from "vitest";
+import type { BranchInfo } from "../../../shared/types/git";
+import type { BranchOperations } from "../branchOperations";
+import {
+  type BranchActionPorts,
+  type BranchActionUi,
+  formatBranchActionError,
+  runBranchAction,
+  submitCreateBranch,
+  submitPush,
+} from "./branchActionRunner";
+import type {
+  BranchActionContext,
+  BranchActionError,
+} from "./branchActionTypes";
+
+const branch: BranchInfo = {
+  name: "feature",
+  fullRef: "refs/heads/feature",
+  isRemote: false,
+  isCurrent: false,
+  isFavorite: false,
+  upstream: "origin/feature",
+  ahead: 1,
+  behind: 2,
+  lastCommitHash: "feature-tip",
+};
+
+const context: BranchActionContext = {
+  repoId: "repo-a",
+  ref: { type: "local", name: "feature", fullRef: "refs/heads/feature" },
+  branch,
+  currentBranch: "main",
+};
+
+function createPorts(): BranchActionPorts & {
+  operations: BranchOperations;
+  ui: BranchActionUi;
+} {
+  return {
+    operations: {
+      checkout: vi.fn().mockResolvedValue(undefined),
+      create: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      rename: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(undefined),
+      push: vi.fn().mockResolvedValue(undefined),
+      merge: vi.fn().mockResolvedValue(undefined),
+      rebase: vi.fn().mockResolvedValue(undefined),
+      checkoutAndRebase: vi.fn().mockResolvedValue(undefined),
+      setFavorite: vi.fn().mockResolvedValue(undefined),
+      compare: vi.fn().mockResolvedValue(undefined),
+      fetch: vi.fn().mockResolvedValue(undefined),
+      createPrompt: vi.fn().mockResolvedValue(undefined),
+      deletePrompt: vi.fn().mockResolvedValue(undefined),
+    },
+    ui: {
+      confirm: vi.fn().mockResolvedValue(true),
+      input: vi.fn().mockResolvedValue(null),
+      openCreate: vi.fn(),
+      openPush: vi.fn(),
+      isCurrent: vi.fn().mockReturnValue(true),
+      notifyError: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+}
+
+function typedError(
+  code: string,
+  message: string,
+  recovery?: string,
+): Error & { code: string; recovery?: string } {
+  return Object.assign(new Error(message), {
+    code,
+    ...(recovery ? { recovery } : {}),
+  });
+}
+
+describe("runBranchAction", () => {
+  it("forwards update to the repository captured in the action context", async () => {
+    const ports = createPorts();
+
+    await runBranchAction("update", context, ports);
+
+    expect(ports.operations.update).toHaveBeenCalledWith("repo-a", "feature");
+  });
+
+  it("routes non-destructive and dialog actions through operation and UI ports", async () => {
+    const ports = createPorts();
+    ports.ui.input = vi.fn().mockResolvedValue("renamed");
+
+    await runBranchAction("toggle-favorite", context, ports);
+    await runBranchAction("checkout", context, ports);
+    await runBranchAction("new-branch", context, ports);
+    await runBranchAction("compare-current", context, ports);
+    await runBranchAction("checkout-rebase", context, ports);
+    await runBranchAction("rename", context, ports);
+    await runBranchAction("push", context, ports);
+
+    expect(ports.operations.setFavorite).toHaveBeenCalledWith(
+      "repo-a",
+      context.ref,
+      true,
+    );
+    expect(ports.operations.checkout).toHaveBeenCalledWith("repo-a", branch);
+    expect(ports.ui.openCreate).toHaveBeenCalledWith(
+      "repo-a",
+      context.ref,
+      "feature",
+      "feature",
+    );
+    expect(ports.operations.compare).toHaveBeenCalledWith(
+      "repo-a",
+      context.ref,
+    );
+    expect(ports.operations.checkoutAndRebase).toHaveBeenCalledWith(
+      "repo-a",
+      "feature",
+      "main",
+    );
+    expect(ports.operations.rename).toHaveBeenCalledWith(
+      "repo-a",
+      "feature",
+      "renamed",
+    );
+    expect(ports.ui.openPush).toHaveBeenCalledWith(
+      "repo-a",
+      context.ref,
+      "feature",
+    );
+  });
+
+  it("confirms merge, rebase, and delete before invoking them", async () => {
+    const ports = createPorts();
+
+    await runBranchAction("merge-current", context, ports);
+    await runBranchAction("rebase-current", context, ports);
+    await runBranchAction("delete", context, ports);
+
+    expect(ports.operations.merge).toHaveBeenCalledWith("repo-a", "feature");
+    expect(ports.operations.rebase).toHaveBeenCalledWith("repo-a", "feature");
+    expect(ports.operations.delete).toHaveBeenCalledWith(
+      "repo-a",
+      branch,
+      false,
+    );
+  });
+
+  it("offers force delete only for BRANCH_NOT_FULLY_MERGED", async () => {
+    const ports = createPorts();
+    vi.mocked(ports.operations.delete)
+      .mockRejectedValueOnce(
+        typedError("BRANCH_NOT_FULLY_MERGED", "not merged"),
+      )
+      .mockResolvedValueOnce(undefined);
+
+    await runBranchAction("delete", context, ports);
+
+    expect(ports.ui.confirm).toHaveBeenNthCalledWith(
+      2,
+      "Branch 'feature' is not fully merged. Force delete?",
+      "Force Delete",
+    );
+    expect(ports.operations.delete).toHaveBeenNthCalledWith(
+      2,
+      "repo-a",
+      branch,
+      true,
+    );
+    expect(ports.ui.notifyError).not.toHaveBeenCalled();
+  });
+
+  it("preserves a nonmatching typed delete error without a force prompt", async () => {
+    const ports = createPorts();
+    const error = typedError(
+      "REPO_NOT_FOUND",
+      "Repository disappeared",
+      "Choose another repository.",
+    );
+    vi.mocked(ports.operations.delete).mockRejectedValueOnce(error);
+
+    await runBranchAction("delete", context, ports);
+
+    expect(ports.ui.confirm).toHaveBeenCalledTimes(1);
+    expect(ports.ui.notifyError).toHaveBeenCalledWith("Delete failed", {
+      code: "REPO_NOT_FOUND",
+      message: "Repository disappeared",
+      recovery: "Choose another repository.",
+    });
+  });
+
+  it("suppresses recovery prompts and errors when pending work settles stale", async () => {
+    const ports = createPorts();
+    let rejectDelete: (error: unknown) => void = () => {};
+    vi.mocked(ports.operations.delete).mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectDelete = reject;
+        }),
+    );
+    vi.mocked(ports.ui.isCurrent).mockReturnValueOnce(true);
+
+    const pending = runBranchAction("delete", context, ports);
+    await vi.waitFor(() => expect(ports.operations.delete).toHaveBeenCalled());
+    vi.mocked(ports.ui.isCurrent).mockReturnValue(false);
+    rejectDelete(typedError("BRANCH_NOT_FULLY_MERGED", "not merged"));
+    await pending;
+
+    expect(ports.ui.confirm).toHaveBeenCalledTimes(1);
+    expect(ports.ui.notifyError).not.toHaveBeenCalled();
+  });
+
+  it("preserves unknown operation failures in user-visible errors", async () => {
+    const ports = createPorts();
+    vi.mocked(ports.operations.update).mockRejectedValueOnce(
+      "network vanished",
+    );
+
+    await runBranchAction("update", context, ports);
+
+    expect(ports.ui.notifyError).toHaveBeenCalledWith("Update failed", {
+      code: "UNKNOWN",
+      message: "network vanished",
+    });
+  });
+});
+
+describe("formatBranchActionError", () => {
+  it("preserves code, message, and recovery from typed host errors", () => {
+    expect(
+      formatBranchActionError(
+        typedError("BRANCH_NO_UPSTREAM", "No upstream", "Set an upstream."),
+      ),
+    ).toEqual({
+      code: "BRANCH_NO_UPSTREAM",
+      message: "No upstream",
+      recovery: "Set an upstream.",
+    } satisfies BranchActionError);
+  });
+
+  it("normalizes unknown thrown values without inventing a diagnosis", () => {
+    expect(formatBranchActionError({ detail: "bad response" })).toEqual({
+      code: "UNKNOWN",
+      message: "[object Object]",
+    } satisfies BranchActionError);
+  });
+});
+
+describe("dialog submissions", () => {
+  it("returns the real create error and recovery text instead of guessing it already exists", async () => {
+    const ports = createPorts();
+    vi.mocked(ports.operations.create).mockRejectedValueOnce(
+      typedError(
+        "REPO_NOT_FOUND",
+        "Repository disappeared",
+        "Choose another repository.",
+      ),
+    );
+
+    await expect(
+      submitCreateBranch(
+        "repo-a",
+        "main",
+        { branchName: "topic", checkout: true, force: false },
+        ports.operations,
+      ),
+    ).resolves.toBe("Repository disappeared\nChoose another repository.");
+    expect(ports.operations.create).toHaveBeenCalledWith("repo-a", {
+      newBranchName: "topic",
+      startPoint: "main",
+      checkout: true,
+      force: false,
+    });
+  });
+
+  it("returns no create validation message after a successful submission", async () => {
+    const ports = createPorts();
+
+    await expect(
+      submitCreateBranch(
+        "repo-a",
+        "main",
+        { branchName: "topic", checkout: false, force: false },
+        ports.operations,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reports push failures against the captured repository", async () => {
+    const ports = createPorts();
+    vi.mocked(ports.operations.push).mockRejectedValueOnce(
+      typedError("BRANCH_NON_FAST_FORWARD", "Push was rejected", "Pull first."),
+    );
+
+    await expect(
+      submitPush("repo-a", "feature", true, ports.operations, ports.ui),
+    ).resolves.toBe(false);
+    expect(ports.operations.push).toHaveBeenCalledWith(
+      "repo-a",
+      "feature",
+      true,
+    );
+    expect(ports.ui.notifyError).toHaveBeenCalledWith("Push failed", {
+      code: "BRANCH_NON_FAST_FORWARD",
+      message: "Push was rejected",
+      recovery: "Pull first.",
+    });
+  });
+
+  it("suppresses a stale push error and reports success truthfully", async () => {
+    const stalePorts = createPorts();
+    vi.mocked(stalePorts.operations.push).mockRejectedValueOnce(
+      new Error("late failure"),
+    );
+    vi.mocked(stalePorts.ui.isCurrent).mockReturnValue(false);
+
+    await expect(
+      submitPush(
+        "repo-a",
+        "feature",
+        false,
+        stalePorts.operations,
+        stalePorts.ui,
+      ),
+    ).resolves.toBe(false);
+    expect(stalePorts.ui.notifyError).not.toHaveBeenCalled();
+
+    const successPorts = createPorts();
+    await expect(
+      submitPush(
+        "repo-a",
+        "feature",
+        false,
+        successPorts.operations,
+        successPorts.ui,
+      ),
+    ).resolves.toBe(true);
+  });
+});
