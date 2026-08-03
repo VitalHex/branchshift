@@ -694,7 +694,19 @@ export class GitService {
 
   async deleteBranch(branchName: string, force = false): Promise<void> {
     const flag = force ? "-D" : "-d";
-    await this.execGit(["branch", flag, branchName]);
+    try {
+      await this.execGit(["branch", flag, branchName]);
+    } catch (error) {
+      const detail = gitErrorText(error);
+      if (!force && /not fully merged/i.test(detail)) {
+        throw new BranchShiftError(
+          BranchShiftErrorCode.BRANCH_NOT_FULLY_MERGED,
+          `Branch '${branchName}' is not fully merged`,
+          "Review its exclusive commits or force delete it.",
+        );
+      }
+      throw error;
+    }
     this.invalidateCache();
   }
 
