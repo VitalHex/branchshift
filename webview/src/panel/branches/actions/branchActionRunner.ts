@@ -157,7 +157,12 @@ export async function runBranchAction(
         if (!ui.isCurrent(repoId, ref)) return;
         const formatted = formatBranchActionError(error);
         if (formatted.code !== BRANCH_NOT_FULLY_MERGED) {
-          await notifyIfCurrent("Delete failed", formatted, context, ui);
+          await notifyBranchActionErrorIfCurrent(
+            "Delete failed",
+            formatted,
+            context,
+            ui,
+          );
           return;
         }
         const force = await ui.confirm(
@@ -273,15 +278,20 @@ async function runAndPresent(
   try {
     await operation();
   } catch (error) {
-    await notifyIfCurrent(title, formatBranchActionError(error), context, ui);
+    await notifyBranchActionErrorIfCurrent(
+      title,
+      formatBranchActionError(error),
+      context,
+      ui,
+    );
   }
 }
 
-async function notifyIfCurrent(
+export async function notifyBranchActionErrorIfCurrent(
   title: string,
   error: BranchActionError,
-  context: BranchActionContext,
-  ui: BranchActionUi,
+  context: { repoId: string; ref?: GitRefIdentity },
+  ui: Pick<BranchActionUi, "isCurrent" | "notifyError">,
 ): Promise<void> {
   if (!ui.isCurrent(context.repoId, context.ref)) return;
   await ui.notifyError(title, error);

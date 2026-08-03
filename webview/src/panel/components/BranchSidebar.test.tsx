@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react";
 import type { PropsWithChildren, ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -8,10 +14,9 @@ vi.mock("../../shared/bridge", () => ({
     onEvent: vi.fn(() => () => {}),
     setRepoContext: vi.fn(),
   },
-  bridgeWithProgress: vi.fn().mockResolvedValue(undefined),
 }));
 
-const { bridge, bridgeWithProgress } = await import("../../shared/bridge");
+const { bridge } = await import("../../shared/bridge");
 const { GitLogStoreProvider } = await import(
   "../../shared/store/git-log-store-context"
 );
@@ -31,6 +36,14 @@ function StoreWrapper({ children }: PropsWithChildren) {
 
 function renderWithStore(ui: ReactElement) {
   return render(ui, { wrapper: StoreWrapper });
+}
+
+function deferredVoid() {
+  let reject: (reason: unknown) => void = () => {};
+  const promise = new Promise<void>((_resolve, rejectPromise) => {
+    reject = rejectPromise;
+  });
+  return { promise, reject };
 }
 
 afterEach(() => {
@@ -134,7 +147,11 @@ describe("BranchSidebar ref actions", () => {
       "No upstream configured",
     );
     fireEvent.click(update);
-    expect(bridgeWithProgress).not.toHaveBeenCalled();
+    expect(
+      vi
+        .mocked(bridge.request)
+        .mock.calls.some(([command]) => command === "updateBranch"),
+    ).toBe(false);
   });
 
   it("disables repository mutations when no repository is active", () => {
@@ -221,6 +238,90 @@ describe("BranchSidebar ref actions", () => {
         .mocked(bridge.request)
         .mock.calls.filter(([command]) => command === "showErrorNotification"),
     ).toHaveLength(1);
+  });
+
+  it("suppresses deferred failures after their ref or repository becomes stale", async () => {
+    const featureRef = {
+      type: "local",
+      name: "feature",
+      fullRef: "refs/heads/feature",
+    } as const;
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({
+      selectedRefs: [featureRef],
+      branches: [
+        {
+          name: "feature",
+          fullRef: "refs/heads/feature",
+          isRemote: false,
+          isFavorite: false,
+          upstream: "origin/feature",
+          lastCommitHash: "tip",
+        } as never,
+      ],
+    });
+    const pendingUpdate = deferredVoid();
+    const pendingFetch = deferredVoid();
+    vi.mocked(bridge.request)
+      .mockImplementationOnce(() => pendingUpdate.promise)
+      .mockImplementationOnce(() => pendingFetch.promise);
+    const { getByRole } = renderWithStore(<BranchSidebar />);
+
+    fireEvent.click(getByRole("button", { name: "Update Selected" }));
+    fireEvent.click(getByRole("button", { name: "Fetch" }));
+    await waitFor(() => {
+      expect(bridge.request).toHaveBeenCalledWith(
+        "updateBranch",
+        { branchName: "feature" },
+        { repoId: "repo-a" },
+      );
+      expect(bridge.request).toHaveBeenCalledWith("fetchAll", undefined, {
+        repoId: "repo-a",
+      });
+    });
+
+    act(() => {
+      panelStore.setState({
+        selectedRefs: [
+          { type: "local", name: "other", fullRef: "refs/heads/other" },
+        ],
+        branches: [],
+      });
+    });
+    await act(async () => {
+      pendingUpdate.reject(
+        Object.assign(new Error("Repository unavailable"), {
+          code: "REPO_NOT_FOUND",
+          recovery: "Choose an available repository.",
+        }),
+      );
+      await pendingUpdate.promise.catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    expect(
+      vi
+        .mocked(bridge.request)
+        .mock.calls.filter(([command]) => command === "showErrorNotification"),
+    ).toHaveLength(0);
+
+    act(() => useRepoStore.setState({ activeRepoId: "repo-b" }));
+    await act(async () => {
+      pendingFetch.reject(
+        Object.assign(new Error("Remote unavailable"), {
+          code: "FETCH_FAILED",
+          recovery: "Check the remote and try again.",
+        }),
+      );
+      await pendingFetch.promise.catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    expect(
+      vi
+        .mocked(bridge.request)
+        .mock.calls.filter(([command]) => command === "showErrorNotification"),
+    ).toHaveLength(0);
   });
 
   it("shows a typed Fetch failure message and recovery once", async () => {

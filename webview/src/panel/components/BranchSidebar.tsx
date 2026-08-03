@@ -3,8 +3,14 @@ import { Tooltip } from "../../shared/components/Tooltip";
 import "../../shared/components/Tooltip.css";
 import { useGitLogStore } from "../../shared/store/git-log-store-context";
 import type { PanelStore } from "../../shared/store/panel-store";
-import { formatBranchActionError } from "../branches/actions/branchActionRunner";
+import type { GitRefIdentity } from "../../shared/types/git";
+import {
+  type BranchActionUi,
+  formatBranchActionError,
+  notifyBranchActionErrorIfCurrent,
+} from "../branches/actions/branchActionRunner";
 import { useBranchOperations } from "../branches/branchOperations";
+import { refKey } from "../utils/refUtils";
 
 export function BranchSidebar({
   onTogglePanel,
@@ -39,6 +45,17 @@ export function BranchSidebar({
     selectedBranch?.isFavorite ?? selectedTag?.isFavorite;
   const selectedTargetHash =
     selectedBranch?.lastCommitHash ?? selectedTag?.targetCommitHash;
+  const latestSelectedRef = useRef(selectedRef);
+  latestSelectedRef.current = selectedRef;
+  const isActionCurrent = useCallback(
+    (repoId: string, ref?: GitRefIdentity) => {
+      if (actionRepoId() !== repoId) return false;
+      if (!ref) return true;
+      const currentRef = latestSelectedRef.current;
+      return currentRef !== null && refKey(currentRef) === refKey(ref);
+    },
+    [actionRepoId],
+  );
   const branchGroupByDirectory = useGitLogStore(
     (s) => s.branchGroupByDirectory,
   );
@@ -55,32 +72,58 @@ export function BranchSidebar({
       await runSidebarAction(
         () => operations.createPrompt(repoId),
         "Create branch failed",
+        { repoId },
+        isActionCurrent,
         requestFromSurface,
       );
     }
-  }, [actionRepoId, onNewBranch, operations, requestFromSurface]);
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    onNewBranch,
+    operations,
+    requestFromSurface,
+  ]);
 
   const handleUpdateSelected = useCallback(async () => {
-    if (!selectedLocalBranch?.upstream) return;
+    if (!selectedRef || !selectedLocalBranch?.upstream) return;
     const repoId = actionRepoId();
     if (!repoId) return;
     await runSidebarAction(
       () => operations.update(repoId, selectedLocalBranch.name),
       "Update failed",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
       requestFromSurface,
     );
-  }, [actionRepoId, operations, requestFromSurface, selectedLocalBranch]);
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    operations,
+    requestFromSurface,
+    selectedLocalBranch,
+    selectedRef,
+  ]);
 
   const handleDeleteBranch = useCallback(async () => {
-    if (!selectedLocalBranch) return;
+    if (!selectedRef || !selectedLocalBranch) return;
     const repoId = actionRepoId();
     if (!repoId) return;
     await runSidebarAction(
       () => operations.deletePrompt(repoId, selectedLocalBranch.name),
       "Delete failed",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
       requestFromSurface,
     );
-  }, [actionRepoId, operations, requestFromSurface, selectedLocalBranch]);
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    operations,
+    requestFromSurface,
+    selectedLocalBranch,
+    selectedRef,
+  ]);
 
   const handleFetch = useCallback(async () => {
     const repoId = actionRepoId();
@@ -88,9 +131,11 @@ export function BranchSidebar({
     await runSidebarAction(
       () => operations.fetch(repoId),
       "Fetch failed",
+      { repoId },
+      isActionCurrent,
       requestFromSurface,
     );
-  }, [actionRepoId, operations, requestFromSurface]);
+  }, [actionRepoId, isActionCurrent, operations, requestFromSurface]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!selectedRef || selectedFavorite === undefined) return;
@@ -99,10 +144,13 @@ export function BranchSidebar({
     await runSidebarAction(
       () => operations.setFavorite(repoId, selectedRef, !selectedFavorite),
       "Could not update favorite",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
       requestFromSurface,
     );
   }, [
     actionRepoId,
+    isActionCurrent,
     operations,
     requestFromSurface,
     selectedFavorite,
@@ -354,6 +402,8 @@ function SettingsMenu({ onClose }: { onClose: () => void }) {
 async function runSidebarAction(
   operation: () => Promise<void>,
   title: string,
+  context: { repoId: string; ref?: GitRefIdentity },
+  isCurrent: BranchActionUi["isCurrent"],
   request: PanelStore["requestFromSurface"],
 ): Promise<void> {
   try {
@@ -361,13 +411,25 @@ async function runSidebarAction(
   } catch (error) {
     const formatted = formatBranchActionError(error);
     if (formatted.code === "STALE_RESPONSE") return;
-    const recovery = formatted.recovery ? `\n${formatted.recovery}` : "";
-    await request(
-      "showErrorNotification",
-      { message: `${title}: ${formatted.message}${recovery}` },
-      { scope: "global" },
-    );
+    await notifyBranchActionErrorIfCurrent(title, formatted, context, {
+      isCurrent,
+      notifyError: (errorTitle, currentError) =>
+        notifyActionError(request, errorTitle, currentError),
+    });
   }
+}
+
+async function notifyActionError(
+  request: PanelStore["requestFromSurface"],
+  title: string,
+  error: Parameters<BranchActionUi["notifyError"]>[1],
+): Promise<void> {
+  const recovery = error.recovery ? `\n${error.recovery}` : "";
+  await request(
+    "showErrorNotification",
+    { message: `${title}: ${error.message}${recovery}` },
+    { scope: "global" },
+  );
 }
 
 /* ─── JetBrains Official Icons (Apache 2.0) ──────────────────────── */
