@@ -620,6 +620,84 @@ describe("BranchTree unified refs", () => {
     await waitFor(() => expect(view.queryByRole("menu")).toBeNull());
   });
 
+  it("closes a menu when the checked-out branch changes", async () => {
+    seedTree(false);
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(view.getByRole("menu")).toBeTruthy();
+
+    act(() => panelStore.setState({ currentBranch: "favorite" }));
+    view.rerender(<BranchTree />);
+
+    await waitFor(() => expect(view.queryByRole("menu")).toBeNull());
+  });
+
+  it("does not carry current-row selection into another repository", () => {
+    seedTree(false);
+    const view = renderWithStore(<BranchTree />);
+    const currentRow = view.getByText("Current Branch: main");
+    fireEvent.click(currentRow);
+    expect((currentRow as HTMLElement).style.background).toBe(
+      "var(--selected-bg)",
+    );
+
+    act(() => useRepoStore.setState({ activeRepoId: "repo-b" }));
+    view.rerender(<BranchTree />);
+
+    expect(
+      (view.getByText("Current Branch: main") as HTMLElement).style.background,
+    ).toBe("transparent");
+  });
+
+  it("creates a branch from detached HEAD through the captured repository", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-detached" });
+    panelStore.setState((state) => ({
+      branches: state.branches.map((branch) => ({
+        ...branch,
+        isCurrent: false,
+      })),
+      currentBranch: "",
+      commits: [
+        {
+          hash: "detached-tip",
+          parents: [],
+          authorName: "Test Author",
+          authorEmail: "test@example.com",
+          authorDate: "2026-08-03T00:00:00.000Z",
+          commitDate: "2026-08-03T00:00:00.000Z",
+          subject: "Detached commit",
+          body: "",
+          refs: [{ type: "HEAD", name: "HEAD", fullRef: "HEAD" }],
+        },
+      ] as never[],
+    }));
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.click(view.getByRole("button", { name: "New Branch" }));
+    expect(view.getByText("Create Branch from 'HEAD'")).toBeTruthy();
+    fireEvent.change(view.getByLabelText("Branch Name:"), {
+      target: { value: "detached-work" },
+    });
+    fireEvent.click(view.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(bridge.request).toHaveBeenCalledWith(
+        "createBranch",
+        {
+          newBranchName: "detached-work",
+          startPoint: "HEAD",
+          checkout: true,
+          force: false,
+        },
+        { repoId: "repo-detached" },
+      ),
+    );
+  });
+
   it("shows the real create-branch error", async () => {
     seedTree(false);
     useRepoStore.setState({ activeRepoId: "repo-a" });

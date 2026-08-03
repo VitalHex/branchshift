@@ -21,6 +21,7 @@ export interface BranchTreeMenuView {
   y: number;
   name: string;
   items: readonly BranchActionMenuItem[];
+  presentation: "branch" | "tag";
 }
 
 export interface BranchTreeCreateView {

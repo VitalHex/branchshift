@@ -19,7 +19,7 @@ export type BranchOverlay =
   | {
       kind: "create";
       repoId: string;
-      sourceRefKey: string;
+      sourceRefKey?: string;
       startPoint: string;
       defaultName: string;
     }
@@ -43,14 +43,17 @@ export function branchOverlayRefKey(context: BranchActionContext): string {
 export function useBranchOverlay(
   repoId: string | null,
   validRefKeys: ReadonlySet<string>,
+  currentBranch: string,
 ) {
   const [overlay, setOverlay] = useState<BranchOverlay>(null);
 
   useEffect(() => {
     setOverlay((current) =>
-      isOverlayValid(current, repoId, validRefKeys) ? current : null,
+      isOverlayValid(current, repoId, validRefKeys, currentBranch)
+        ? current
+        : null,
     );
-  }, [repoId, validRefKeys]);
+  }, [currentBranch, repoId, validRefKeys]);
 
   const openMenu = useCallback(
     (kind: "branch-menu" | "tag-menu", input: MenuInput) => {
@@ -58,6 +61,7 @@ export function useBranchOverlay(
       if (
         repoId === null ||
         input.context.repoId !== repoId ||
+        input.context.currentBranch !== currentBranch ||
         !validRefKeys.has(sourceRefKey)
       ) {
         setOverlay(null);
@@ -65,11 +69,13 @@ export function useBranchOverlay(
       }
       setOverlay({ kind, repoId, ...input });
     },
-    [repoId, validRefKeys],
+    [currentBranch, repoId, validRefKeys],
   );
 
   return {
-    overlay: isOverlayValid(overlay, repoId, validRefKeys) ? overlay : null,
+    overlay: isOverlayValid(overlay, repoId, validRefKeys, currentBranch)
+      ? overlay
+      : null,
     closeOverlay: useCallback(() => setOverlay(null), []),
     openBranchMenu: useCallback(
       (input: MenuInput) => openMenu("branch-menu", input),
@@ -81,7 +87,11 @@ export function useBranchOverlay(
     ),
     openCreate: useCallback(
       (input: CreateInput) => {
-        if (repoId === null || !validRefKeys.has(input.sourceRefKey)) {
+        if (
+          repoId === null ||
+          (input.sourceRefKey !== undefined &&
+            !validRefKeys.has(input.sourceRefKey))
+        ) {
           setOverlay(null);
           return;
         }
@@ -106,12 +116,17 @@ function isOverlayValid(
   overlay: BranchOverlay,
   repoId: string | null,
   validRefKeys: ReadonlySet<string>,
+  currentBranch: string,
 ): boolean {
   if (overlay === null) return true;
   if (overlay.repoId !== repoId) return false;
-  const sourceRefKey =
-    "context" in overlay
-      ? branchOverlayRefKey(overlay.context)
-      : overlay.sourceRefKey;
-  return validRefKeys.has(sourceRefKey);
+  if ("context" in overlay) {
+    return (
+      overlay.context.currentBranch === currentBranch &&
+      validRefKeys.has(branchOverlayRefKey(overlay.context))
+    );
+  }
+  return (
+    overlay.sourceRefKey === undefined || validRefKeys.has(overlay.sourceRefKey)
+  );
 }

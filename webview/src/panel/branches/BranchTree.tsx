@@ -64,8 +64,10 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
   );
   const activeRepoId = useRepoStore((state) => state.activeRepoId);
   const operations = useBranchOperations();
-  const [currentBranchRowSelected, setCurrentBranchRowSelected] =
-    useState(false);
+  const [currentBranchRowSelectedRepoId, setCurrentBranchRowSelectedRepoId] =
+    useState<string | null>(null);
+  const currentBranchRowSelected =
+    activeRepoId !== null && currentBranchRowSelectedRepoId === activeRepoId;
 
   const favoriteRefs = useMemo(
     () =>
@@ -175,7 +177,13 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
   );
   const latestValidRefKeys = useRef(validRefKeys);
   latestValidRefKeys.current = validRefKeys;
-  const overlayController = useBranchOverlay(activeRepoId, validRefKeys);
+  const latestCurrentBranch = useRef(currentBranch);
+  latestCurrentBranch.current = currentBranch;
+  const overlayController = useBranchOverlay(
+    activeRepoId,
+    validRefKeys,
+    currentBranch,
+  );
   const { overlay } = overlayController;
 
   const selectedRefKeys = useMemo(
@@ -244,7 +252,7 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
       selectRef(ref, selectionMode, visibleRefs);
       if (selectionMode === "single") applySingleRefAction(ref);
     },
-    () => setCurrentBranchRowSelected(false),
+    () => setCurrentBranchRowSelectedRepoId(null),
   );
   const handleRefClick = useCallback(
     (event: React.MouseEvent, ref: GitRefIdentity) => {
@@ -254,11 +262,11 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
     [selectWithModifiers],
   );
   const handleRefDoubleClick = useCallback((_ref: GitRefIdentity) => {
-    setCurrentBranchRowSelected(false);
+    setCurrentBranchRowSelectedRepoId(null);
   }, []);
   const handleRefKeyboardActivate = useCallback(
     (ref: GitRefIdentity) => {
-      setCurrentBranchRowSelected(false);
+      setCurrentBranchRowSelectedRepoId(null);
       selectRef(ref, "single", visibleRefs);
       applySingleRefAction(ref);
     },
@@ -326,11 +334,17 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
           branchName,
         });
       },
-      isCurrent(repoId, ref) {
-        return (
-          ref !== undefined &&
-          isLatestRef(repoId, ref, latestValidRefKeys.current)
-        );
+      isCurrent(repoId, ref, capturedCurrentBranch) {
+        if (
+          capturedCurrentBranch !== undefined &&
+          capturedCurrentBranch !== latestCurrentBranch.current
+        ) {
+          return false;
+        }
+        if (ref === undefined) {
+          return useRepoStore.getState().activeRepoId === repoId;
+        }
+        return isLatestRef(repoId, ref, latestValidRefKeys.current);
       },
       async notifyError(title, error) {
         await notifyActionError(requestFromSurface, title, error);
@@ -350,6 +364,7 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
       y: overlay.y,
       name: overlay.context.ref.name,
       items: getBranchActionItems(overlay.context),
+      presentation: overlay.kind === "tag-menu" ? "tag" : "branch",
     };
   }, [overlay]);
   const handleMenuAction = useCallback(
@@ -420,7 +435,7 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
   );
   const toggle = useCallback(
     (id: string) => {
-      setCurrentBranchRowSelected(false);
+      setCurrentBranchRowSelectedRepoId(null);
       treeState.toggle(id);
     },
     [treeState.toggle],
@@ -448,8 +463,11 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
       });
       return;
     }
-    void operations.createPrompt(activeRepoId);
-  }, [activeRepoId, localEntries, operations, overlayController.openCreate]);
+    overlayController.openCreate({
+      startPoint: "HEAD",
+      defaultName: "",
+    });
+  }, [activeRepoId, localEntries, overlayController.openCreate]);
 
   return (
     <div style={{ height: "100%", display: "flex" }}>
@@ -485,7 +503,9 @@ export function BranchTree({ onTogglePanel }: BranchTreeProps = {}) {
         }
         onSearchChange={treeState.setSearchQuery}
         onToggle={toggle}
-        onCurrentBranchClick={() => setCurrentBranchRowSelected(true)}
+        onCurrentBranchClick={() =>
+          setCurrentBranchRowSelectedRepoId(activeRepoId)
+        }
         onCurrentBranchDoubleClick={() => {
           if (headEntry) handleRefDoubleClick(headEntry.ref);
         }}
@@ -527,12 +547,12 @@ function isLatestRef(
 
 function isLatestSource(
   repoId: string,
-  sourceRefKey: string,
+  sourceRefKey: string | undefined,
   validRefKeys: ReadonlySet<string>,
 ): boolean {
   return (
     useRepoStore.getState().activeRepoId === repoId &&
-    validRefKeys.has(sourceRefKey)
+    (sourceRefKey === undefined || validRefKeys.has(sourceRefKey))
   );
 }
 

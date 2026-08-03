@@ -146,6 +146,31 @@ describe("runBranchAction", () => {
     );
   });
 
+  it("does not merge after the checked-out branch changes during confirmation", async () => {
+    const ports = createPorts();
+    let currentBranch = "main";
+    let resolveConfirmation: (confirmed: boolean) => void = () => {};
+    ports.ui.confirm = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+    ports.ui.isCurrent = vi.fn(
+      (_repoId, _ref, capturedCurrentBranch?: string) =>
+        capturedCurrentBranch === undefined ||
+        capturedCurrentBranch === currentBranch,
+    );
+
+    const pending = runBranchAction("merge-current", context, ports);
+    await vi.waitFor(() => expect(ports.ui.confirm).toHaveBeenCalled());
+    currentBranch = "release";
+    resolveConfirmation(true);
+    await pending;
+
+    expect(ports.operations.merge).not.toHaveBeenCalled();
+  });
+
   it("offers force delete only for BRANCH_NOT_FULLY_MERGED", async () => {
     const ports = createPorts();
     vi.mocked(ports.operations.delete)
@@ -239,10 +264,20 @@ describe("formatBranchActionError", () => {
   });
 
   it("normalizes unknown thrown values without inventing a diagnosis", () => {
-    expect(formatBranchActionError({ detail: "bad response" })).toEqual({
+    const thrown = { detail: "bad response" };
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    expect(formatBranchActionError(thrown)).toEqual({
       code: "UNKNOWN",
-      message: "[object Object]",
+      message: "An unexpected error occurred.",
     } satisfies BranchActionError);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Unexpected branch action error:",
+      thrown,
+    );
+    consoleError.mockRestore();
   });
 });
 

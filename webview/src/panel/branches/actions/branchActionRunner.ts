@@ -18,7 +18,11 @@ export interface BranchActionUi {
     defaultName: string,
   ): void;
   openPush(repoId: string, sourceRef: GitRefIdentity, branchName: string): void;
-  isCurrent(repoId: string, ref?: GitRefIdentity): boolean;
+  isCurrent(
+    repoId: string,
+    ref?: GitRefIdentity,
+    currentBranch?: string,
+  ): boolean;
   notifyError(title: string, error: BranchActionError): Promise<void>;
 }
 
@@ -34,7 +38,7 @@ export async function runBranchAction(
 ): Promise<void> {
   const { operations, ui } = ports;
   const { branch, ref, repoId } = context;
-  if (!ui.isCurrent(repoId, ref)) return;
+  if (!isActionCurrent(context, ui)) return;
 
   switch (id) {
     case "toggle-favorite": {
@@ -129,7 +133,7 @@ export async function runBranchAction(
         `Rename branch '${branch.name}' to:`,
         branch.name,
       );
-      if (!ui.isCurrent(repoId, ref)) return;
+      if (!isActionCurrent(context, ui)) return;
       const newName = value?.trim();
       if (!newName || newName === branch.name) return;
       await runAndPresent(
@@ -154,7 +158,7 @@ export async function runBranchAction(
       try {
         await operations.delete(repoId, branch, false);
       } catch (error) {
-        if (!ui.isCurrent(repoId, ref)) return;
+        if (!isActionCurrent(context, ui)) return;
         const formatted = formatBranchActionError(error);
         if (formatted.code !== BRANCH_NOT_FULLY_MERGED) {
           await notifyBranchActionErrorIfCurrent(
@@ -169,7 +173,7 @@ export async function runBranchAction(
           `Branch '${branch.name}' is not fully merged. Force delete?`,
           "Force Delete",
         );
-        if (!ui.isCurrent(repoId, ref) || !force) return;
+        if (!isActionCurrent(context, ui) || !force) return;
         await runAndPresent(
           () => operations.delete(repoId, branch, true),
           "Force delete failed",
@@ -199,12 +203,17 @@ export function formatBranchActionError(error: unknown): BranchActionError {
     message?: unknown;
     recovery?: unknown;
   };
-  const message =
-    typeof value?.message === "string"
-      ? value.message
-      : error instanceof Error
-        ? error.message
-        : String(error);
+  let message: string;
+  if (typeof value?.message === "string") {
+    message = value.message;
+  } else if (error instanceof Error) {
+    message = error.message;
+  } else if (typeof error === "string") {
+    message = error;
+  } else {
+    console.error("Unexpected branch action error:", error);
+    message = "An unexpected error occurred.";
+  }
   return {
     code: typeof value?.code === "string" ? value.code : "UNKNOWN",
     message,
@@ -266,7 +275,7 @@ async function confirmCurrent(
   ui: BranchActionUi,
 ): Promise<boolean> {
   const confirmed = await ui.confirm(message, label);
-  return confirmed && ui.isCurrent(context.repoId, context.ref);
+  return confirmed && isActionCurrent(context, ui);
 }
 
 async function runAndPresent(
@@ -275,6 +284,7 @@ async function runAndPresent(
   context: BranchActionContext,
   ui: BranchActionUi,
 ): Promise<void> {
+  if (!isActionCurrent(context, ui)) return;
   try {
     await operation();
   } catch (error) {
@@ -290,9 +300,20 @@ async function runAndPresent(
 export async function notifyBranchActionErrorIfCurrent(
   title: string,
   error: BranchActionError,
-  context: { repoId: string; ref?: GitRefIdentity },
+  context: {
+    repoId: string;
+    ref?: GitRefIdentity;
+    currentBranch?: string;
+  },
   ui: Pick<BranchActionUi, "isCurrent" | "notifyError">,
 ): Promise<void> {
-  if (!ui.isCurrent(context.repoId, context.ref)) return;
+  if (!ui.isCurrent(context.repoId, context.ref, context.currentBranch)) return;
   await ui.notifyError(title, error);
+}
+
+function isActionCurrent(
+  context: BranchActionContext,
+  ui: Pick<BranchActionUi, "isCurrent">,
+): boolean {
+  return ui.isCurrent(context.repoId, context.ref, context.currentBranch);
 }

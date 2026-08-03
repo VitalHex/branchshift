@@ -26,9 +26,45 @@ const branchActionContext: BranchActionContext = {
 const sourceRefKey = "local:refs/heads/feature";
 
 describe("useBranchOverlay", () => {
+  it("closes a menu when the captured current branch changes", () => {
+    const { result, rerender } = renderHook(
+      ({ currentBranch }) =>
+        useBranchOverlay("repo-a", new Set([sourceRefKey]), currentBranch),
+      { initialProps: { currentBranch: "main" } },
+    );
+
+    act(() => {
+      result.current.openBranchMenu({
+        x: 20,
+        y: 30,
+        context: branchActionContext,
+      });
+    });
+    rerender({ currentBranch: "release" });
+
+    expect(result.current.overlay).toBeNull();
+  });
+
+  it("opens a repository-bound create overlay without a source ref", () => {
+    const { result } = renderHook(() =>
+      useBranchOverlay("repo-a", new Set<string>(), ""),
+    );
+
+    act(() => {
+      result.current.openCreate({ startPoint: "HEAD", defaultName: "" });
+    });
+
+    expect(result.current.overlay).toMatchObject({
+      kind: "create",
+      repoId: "repo-a",
+      startPoint: "HEAD",
+    });
+  });
+
   it("closes a branch menu when its repository changes", () => {
     const { result, rerender } = renderHook(
-      ({ repoId, validRefKeys }) => useBranchOverlay(repoId, validRefKeys),
+      ({ repoId, validRefKeys }) =>
+        useBranchOverlay(repoId, validRefKeys, "main"),
       {
         initialProps: {
           repoId: "repo-a",
@@ -51,7 +87,7 @@ describe("useBranchOverlay", () => {
 
   it("closes a branch menu when its captured ref disappears", () => {
     const { result, rerender } = renderHook(
-      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys),
+      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys, "main"),
       { initialProps: { validRefKeys: new Set([sourceRefKey]) } },
     );
 
@@ -69,7 +105,8 @@ describe("useBranchOverlay", () => {
 
   it("returns no stale overlay immediately after a repository rerender", () => {
     const { result, rerender } = renderHook(
-      ({ repoId, validRefKeys }) => useBranchOverlay(repoId, validRefKeys),
+      ({ repoId, validRefKeys }) =>
+        useBranchOverlay(repoId, validRefKeys, "main"),
       {
         initialProps: {
           repoId: "repo-a",
@@ -92,7 +129,7 @@ describe("useBranchOverlay", () => {
 
   it("closes a tag menu when its captured ref disappears", () => {
     const { result, rerender } = renderHook(
-      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys),
+      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys, "main"),
       { initialProps: { validRefKeys: new Set([sourceRefKey]) } },
     );
 
@@ -125,7 +162,7 @@ describe("useBranchOverlay", () => {
     ],
   ])("closes a %s overlay when its source ref disappears", (_kind, open) => {
     const { result, rerender } = renderHook(
-      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys),
+      ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys, "main"),
       { initialProps: { validRefKeys: new Set([sourceRefKey]) } },
     );
 

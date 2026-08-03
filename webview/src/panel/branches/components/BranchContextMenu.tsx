@@ -9,6 +9,7 @@ export interface BranchContextMenuProps {
   y: number;
   name: string;
   items: readonly BranchActionMenuItem[];
+  presentation: "branch" | "tag";
   onAction(id: BranchActionId): void;
   onClose(): void;
 }
@@ -18,11 +19,13 @@ export function BranchContextMenu({
   y,
   name,
   items,
+  presentation,
   onAction,
   onClose,
 }: BranchContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: y, left: x });
+  const isTagPresentation = presentation === "tag";
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -86,36 +89,59 @@ export function BranchContextMenu({
       ref={menuRef}
       role="menu"
       aria-label={`Actions for ${name}`}
-      style={{
-        position: "fixed",
-        top: position.top,
-        left: position.left,
-        zIndex: 9999,
-        background: "var(--vscode-menu-background, #1e1e1e)",
-        border: "1px solid var(--vscode-menu-border, #454545)",
-        borderRadius: 4,
-        padding: "4px 0",
-        minWidth: 160,
-        maxHeight: "calc(100vh - 8px)",
-        overflowY: "auto",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-      }}
+      className={isTagPresentation ? "commit-context-menu" : undefined}
+      style={
+        isTagPresentation
+          ? {
+              position: "fixed",
+              top: position.top,
+              left: position.left,
+              zIndex: 9999,
+              maxHeight: "calc(100vh - 8px)",
+              overflowY: "auto",
+            }
+          : {
+              position: "fixed",
+              top: position.top,
+              left: position.left,
+              zIndex: 9999,
+              background: "var(--vscode-menu-background, #1e1e1e)",
+              border: "1px solid var(--vscode-menu-border, #454545)",
+              borderRadius: 4,
+              padding: "4px 0",
+              minWidth: 160,
+              maxHeight: "calc(100vh - 8px)",
+              overflowY: "auto",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+            }
+      }
     >
       {items.map((item) =>
         item.kind === "separator" ? (
           <div
             key={`separator:${item.id}`}
-            style={{
-              height: 1,
-              background: "var(--vscode-menu-separatorBackground, #454545)",
-              margin: "4px 0",
-            }}
+            className={
+              isTagPresentation ? "commit-context-menu-separator" : undefined
+            }
+            style={
+              isTagPresentation
+                ? undefined
+                : {
+                    height: 1,
+                    background:
+                      "var(--vscode-menu-separatorBackground, #454545)",
+                    margin: "4px 0",
+                  }
+            }
           />
         ) : (
           <button
             key={item.id}
             type="button"
             role="menuitem"
+            className={
+              isTagPresentation ? "commit-context-menu-item" : undefined
+            }
             tabIndex={0}
             aria-label={item.label}
             aria-disabled={!item.enabled || undefined}
@@ -129,21 +155,28 @@ export function BranchContextMenu({
               event.preventDefault();
               if (item.enabled) onAction(item.id);
             }}
-            style={{
-              width: "100%",
-              border: 0,
-              padding: "6px 16px",
-              background: "transparent",
-              cursor: item.enabled ? "pointer" : "default",
-              opacity: item.enabled ? 1 : 0.5,
-              color: "var(--vscode-menu-foreground, #ccc)",
-              font: "inherit",
-              fontSize: "13px",
-              textAlign: "left",
-              whiteSpace: "nowrap",
-            }}
+            style={
+              isTagPresentation
+                ? {
+                    cursor: item.enabled ? "pointer" : "default",
+                    opacity: item.enabled ? 1 : 0.5,
+                  }
+                : {
+                    width: "100%",
+                    border: 0,
+                    padding: "6px 16px",
+                    background: "transparent",
+                    cursor: item.enabled ? "pointer" : "default",
+                    opacity: item.enabled ? 1 : 0.5,
+                    color: "var(--vscode-menu-foreground, #ccc)",
+                    font: "inherit",
+                    fontSize: "13px",
+                    textAlign: "left",
+                    whiteSpace: "nowrap",
+                  }
+            }
             onMouseEnter={(event) => {
-              if (item.enabled) {
+              if (!isTagPresentation && item.enabled) {
                 event.currentTarget.style.background =
                   "var(--vscode-list-hoverBackground, #2a2d2e)";
                 event.currentTarget.style.color =
@@ -151,6 +184,7 @@ export function BranchContextMenu({
               }
             }}
             onMouseLeave={(event) => {
+              if (isTagPresentation) return;
               event.currentTarget.style.background = "transparent";
               event.currentTarget.style.color =
                 "var(--vscode-menu-foreground, #ccc)";

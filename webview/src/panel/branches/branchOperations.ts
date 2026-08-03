@@ -122,7 +122,12 @@ export function createBranchOperations(
       await request("fetchAll", undefined, { repoId });
     },
     async createPrompt(repoId) {
-      await request("createBranchPrompt", {}, { repoId });
+      const result = (await request("createBranchPrompt", {}, { repoId })) as
+        | { success?: unknown }
+        | undefined;
+      if (result?.success === false) {
+        throw new Error("Create branch was not completed.");
+      }
     },
     async deletePrompt(repoId, branchName) {
       await request("deleteBranchPrompt", { branchName }, { repoId });

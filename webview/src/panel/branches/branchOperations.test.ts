@@ -149,4 +149,16 @@ describe("createBranchOperations", () => {
       { repoId: "repo-b" },
     );
   });
+
+  it("rejects an unsuccessful create prompt response", async () => {
+    const operations = createBranchOperations({
+      request: vi.fn().mockResolvedValue({ success: false }),
+      requestWithProgress: vi.fn().mockResolvedValue(undefined),
+      setFavorite: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(operations.createPrompt("repo-a")).rejects.toThrow(
+      "Create branch was not completed.",
+    );
+  });
 });
