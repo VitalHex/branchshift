@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { BranchInfo, TagInfo } from "../../../shared/types/git";
-import { buildBranchTreeSnapshot as buildLegacySnapshot } from "../../models/branchTreeModel";
 import {
   buildBranchTreeSnapshot,
   normalizeBranchEntries,
@@ -59,22 +58,6 @@ function leafIds(snapshot: BranchTreeSnapshot): string[] {
 }
 
 describe("branch tree model", () => {
-  it("keeps the legacy branch-only entry point buildable", () => {
-    const legacyBranch = branch("feature", "refs/heads/feature");
-    const snapshot = buildLegacySnapshot([legacyBranch], {
-      grouped: false,
-      favoriteRefs: new Set(["refs/heads/feature"]),
-    });
-
-    expect(snapshot.roots[0]?.id).toBe("repo:legacy:ref:refs/heads/feature");
-    expect(snapshot.roots[0]?.entry?.isFavorite).toBe(true);
-    expect(snapshot.roots[0]?.entry?.branch).toBe(legacyBranch);
-    expect(snapshot.roots[0]?.branch).toMatchObject({
-      fullRef: "refs/heads/feature",
-      isFavorite: true,
-    });
-  });
-
   it("builds stable repository-scoped grouped and flat snapshots without mutating inputs", () => {
     const localFeature = branch("feature/login", "refs/heads/feature/login", {
       isCurrent: true,

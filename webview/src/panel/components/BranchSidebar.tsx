@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from "react";
-import { bridge, bridgeWithProgress } from "../../shared/bridge";
 import { Tooltip } from "../../shared/components/Tooltip";
 import "../../shared/components/Tooltip.css";
 import { useGitLogStore } from "../../shared/store/git-log-store-context";
+import type { PanelStore } from "../../shared/store/panel-store";
+import { formatBranchActionError } from "../branches/actions/branchActionRunner";
+import { useBranchOperations } from "../branches/branchOperations";
 
 export function BranchSidebar({
   onTogglePanel,
@@ -14,8 +16,11 @@ export function BranchSidebar({
   const selectedRefs = useGitLogStore((s) => s.selectedRefs);
   const branches = useGitLogStore((s) => s.branches);
   const tags = useGitLogStore((s) => s.tags);
-  const setFavorite = useGitLogStore((s) => s.setFavorite);
+  const actionRepoId = useGitLogStore((s) => s.actionRepoId);
+  const requestFromSurface = useGitLogStore((s) => s.requestFromSurface);
   const navigateToRef = useGitLogStore((s) => s.navigateToRef);
+  const operations = useBranchOperations();
+  const mutationRepoId = actionRepoId();
   const selectedRef = selectedRefs.length === 1 ? selectedRefs[0] : null;
   const selectedBranch = selectedRef
     ? branches.find(
@@ -41,45 +46,68 @@ export function BranchSidebar({
     (s) => s.toggleBranchGroupByDirectory,
   );
 
-  const handleNewBranch = useCallback(() => {
+  const handleNewBranch = useCallback(async () => {
+    const repoId = actionRepoId();
+    if (!repoId) return;
     if (onNewBranch) {
       onNewBranch();
     } else {
-      bridge.request("createBranchPrompt", {});
+      await runSidebarAction(
+        () => operations.createPrompt(repoId),
+        "Create branch failed",
+        requestFromSurface,
+      );
     }
-  }, [onNewBranch]);
+  }, [actionRepoId, onNewBranch, operations, requestFromSurface]);
 
   const handleUpdateSelected = useCallback(async () => {
     if (!selectedLocalBranch?.upstream) return;
-    try {
-      await bridgeWithProgress("updateBranch", {
-        branchName: selectedLocalBranch.name,
-      });
-    } catch (error) {
-      await showActionError("Update failed", error);
-    }
-  }, [selectedLocalBranch]);
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.update(repoId, selectedLocalBranch.name),
+      "Update failed",
+      requestFromSurface,
+    );
+  }, [actionRepoId, operations, requestFromSurface, selectedLocalBranch]);
 
-  const handleDeleteBranch = useCallback(() => {
-    if (selectedLocalBranch) {
-      bridge.request("deleteBranchPrompt", {
-        branchName: selectedLocalBranch.name,
-      });
-    }
-  }, [selectedLocalBranch]);
+  const handleDeleteBranch = useCallback(async () => {
+    if (!selectedLocalBranch) return;
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.deletePrompt(repoId, selectedLocalBranch.name),
+      "Delete failed",
+      requestFromSurface,
+    );
+  }, [actionRepoId, operations, requestFromSurface, selectedLocalBranch]);
 
-  const handleFetch = useCallback(() => {
-    bridge.request("fetchAll");
-  }, []);
+  const handleFetch = useCallback(async () => {
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.fetch(repoId),
+      "Fetch failed",
+      requestFromSurface,
+    );
+  }, [actionRepoId, operations, requestFromSurface]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!selectedRef || selectedFavorite === undefined) return;
-    try {
-      await setFavorite(selectedRef, !selectedFavorite);
-    } catch (error) {
-      await showActionError("Could not update favorite", error);
-    }
-  }, [selectedFavorite, selectedRef, setFavorite]);
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.setFavorite(repoId, selectedRef, !selectedFavorite),
+      "Could not update favorite",
+      requestFromSurface,
+    );
+  }, [
+    actionRepoId,
+    operations,
+    requestFromSurface,
+    selectedFavorite,
+    selectedRef,
+  ]);
 
   const handleNavigateToHead = useCallback(async () => {
     if (!selectedRef || !selectedTargetHash) return;
@@ -113,6 +141,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="New Branch"
           onClick={handleNewBranch}
+          disabled={!mutationRepoId}
         >
           <IconAdd />
         </button>
@@ -134,7 +163,7 @@ export function BranchSidebar({
               : undefined
           }
           onClick={handleUpdateSelected}
-          disabled={!selectedLocalBranch?.upstream}
+          disabled={!mutationRepoId || !selectedLocalBranch?.upstream}
         >
           <IconUpdate />
         </button>
@@ -145,7 +174,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Delete Branch"
           onClick={handleDeleteBranch}
-          disabled={!selectedLocalBranch}
+          disabled={!mutationRepoId || !selectedLocalBranch}
         >
           <IconDelete />
         </button>
@@ -156,6 +185,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Fetch"
           onClick={handleFetch}
+          disabled={!mutationRepoId}
         >
           <IconFetch />
         </button>
@@ -166,7 +196,9 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Mark/Unmark As Favorite"
           onClick={handleToggleFavorite}
-          disabled={!selectedRef || selectedFavorite === undefined}
+          disabled={
+            !mutationRepoId || !selectedRef || selectedFavorite === undefined
+          }
         >
           <IconStar />
         </button>
@@ -319,14 +351,23 @@ function SettingsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-async function showActionError(prefix: string, error: unknown): Promise<void> {
-  if ((error as { code?: string })?.code === "STALE_RESPONSE") return;
-  const message = error instanceof Error ? error.message : String(error);
-  await bridge.request(
-    "showErrorNotification",
-    { message: `${prefix}: ${message}` },
-    { scope: "global" },
-  );
+async function runSidebarAction(
+  operation: () => Promise<void>,
+  title: string,
+  request: PanelStore["requestFromSurface"],
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    const formatted = formatBranchActionError(error);
+    if (formatted.code === "STALE_RESPONSE") return;
+    const recovery = formatted.recovery ? `\n${formatted.recovery}` : "";
+    await request(
+      "showErrorNotification",
+      { message: `${title}: ${formatted.message}${recovery}` },
+      { scope: "global" },
+    );
+  }
 }
 
 /* ─── JetBrains Official Icons (Apache 2.0) ──────────────────────── */
