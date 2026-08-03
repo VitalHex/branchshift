@@ -69,7 +69,7 @@ export function useBranchOverlay(
   );
 
   return {
-    overlay,
+    overlay: isOverlayValid(overlay, repoId, validRefKeys) ? overlay : null,
     closeOverlay: useCallback(() => setOverlay(null), []),
     openBranchMenu: useCallback(
       (input: MenuInput) => openMenu("branch-menu", input),

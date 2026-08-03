@@ -67,6 +67,29 @@ describe("useBranchOverlay", () => {
     expect(result.current.overlay).toBeNull();
   });
 
+  it("returns no stale overlay immediately after a repository rerender", () => {
+    const { result, rerender } = renderHook(
+      ({ repoId, validRefKeys }) => useBranchOverlay(repoId, validRefKeys),
+      {
+        initialProps: {
+          repoId: "repo-a",
+          validRefKeys: new Set([sourceRefKey]),
+        },
+      },
+    );
+
+    act(() => {
+      result.current.openBranchMenu({
+        x: 20,
+        y: 30,
+        context: branchActionContext,
+      });
+    });
+    rerender({ repoId: "repo-b", validRefKeys: new Set([sourceRefKey]) });
+
+    expect(result.current.overlay).toBeNull();
+  });
+
   it("closes a tag menu when its captured ref disappears", () => {
     const { result, rerender } = renderHook(
       ({ validRefKeys }) => useBranchOverlay("repo-a", validRefKeys),

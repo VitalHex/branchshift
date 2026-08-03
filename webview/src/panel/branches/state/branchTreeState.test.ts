@@ -38,7 +38,7 @@ describe("branch tree state", () => {
     expect(state.collapsedByMode.grouped.size).toBe(1);
   });
 
-  it("drops vanished directories but retains the three section collapses", () => {
+  it("drops vanished directories from the reconciled mode but retains section collapses", () => {
     let state = createBranchTreeState("repo-a", "grouped");
     for (const id of [
       "repo:repo-a:dir:local:feature",
@@ -48,21 +48,15 @@ describe("branch tree state", () => {
     ]) {
       state = reduceBranchTreeState(state, { type: "toggle", id });
     }
-    state = reduceBranchTreeState(state, { type: "set-mode", mode: "flat" });
-    state = reduceBranchTreeState(state, {
-      type: "toggle",
-      id: "repo:repo-a:dir:remote:stale",
-    });
-
     const reconciled = reconcileCollapsedIds(
       state,
+      "grouped",
       new Set(["repo:repo-a:dir:remote:release"]),
     );
 
     expect(reconciled.collapsedByMode.grouped).toEqual(
       new Set(["section:local", "section:remote", "section:tags"]),
     );
-    expect(reconciled.collapsedByMode.flat).toEqual(new Set());
   });
 
   it("resets search and collapse state when the repository changes", () => {

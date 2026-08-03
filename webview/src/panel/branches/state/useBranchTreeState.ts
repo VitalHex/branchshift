@@ -28,14 +28,18 @@ export function useBranchTreeState(
   }, [mode]);
 
   useEffect(() => {
-    dispatch({ type: "reconcile", directoryIds: snapshot.directoryIds });
-  }, [snapshot.directoryIds]);
+    dispatch({ type: "reconcile", mode, directoryIds: snapshot.directoryIds });
+  }, [mode, snapshot.directoryIds]);
 
-  const isSearching = state.searchQuery.trim().length > 0;
-  const collapsedIds = state.collapsedByMode[state.mode];
+  const repoBoundState =
+    state.repoId === repoId ? state : createBranchTreeState(repoId, mode);
+  const visibleState =
+    repoBoundState.mode === mode ? repoBoundState : { ...repoBoundState, mode };
+  const isSearching = visibleState.searchQuery.trim().length > 0;
+  const collapsedIds = visibleState.collapsedByMode[mode];
   const visibleCollapsedIds = useMemo(
-    () => effectiveCollapsedIds(state, isSearching),
-    [isSearching, state],
+    () => effectiveCollapsedIds(visibleState, isSearching),
+    [isSearching, visibleState],
   );
   const allCollapsibleIds = useMemo(
     () => new Set([...snapshot.directoryIds, ...branchTreeSectionIds]),
@@ -43,7 +47,7 @@ export function useBranchTreeState(
   );
 
   return {
-    searchQuery: state.searchQuery,
+    searchQuery: visibleState.searchQuery,
     setSearchQuery: useCallback(
       (query: string) => dispatch({ type: "set-search", query }),
       [],

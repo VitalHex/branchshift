@@ -14,7 +14,11 @@ export type BranchTreeStateAction =
   | { type: "set-repo"; repoId: string | null }
   | { type: "collapse-all"; ids: ReadonlySet<string> }
   | { type: "expand-all" }
-  | { type: "reconcile"; directoryIds: ReadonlySet<string> };
+  | {
+      type: "reconcile";
+      mode: BranchTreeMode;
+      directoryIds: ReadonlySet<string>;
+    };
 
 export const branchTreeSectionIds = new Set([
   "section:local",
@@ -58,7 +62,7 @@ export function reduceBranchTreeState(
     case "expand-all":
       return withCollapsedIds(state, state.mode, new Set());
     case "reconcile":
-      return reconcileCollapsedIds(state, action.directoryIds);
+      return reconcileCollapsedIds(state, action.mode, action.directoryIds);
   }
 }
 
@@ -71,21 +75,15 @@ export function effectiveCollapsedIds(
 
 export function reconcileCollapsedIds(
   state: BranchTreeState,
+  mode: BranchTreeMode,
   directoryIds: ReadonlySet<string>,
 ): BranchTreeState {
-  const reconcile = (collapsedIds: ReadonlySet<string>) =>
-    new Set(
-      [...collapsedIds].filter(
-        (id) => branchTreeSectionIds.has(id) || directoryIds.has(id),
-      ),
-    );
-  return {
-    ...state,
-    collapsedByMode: {
-      grouped: reconcile(state.collapsedByMode.grouped),
-      flat: reconcile(state.collapsedByMode.flat),
-    },
-  };
+  const collapsedIds = new Set(
+    [...state.collapsedByMode[mode]].filter(
+      (id) => branchTreeSectionIds.has(id) || directoryIds.has(id),
+    ),
+  );
+  return withCollapsedIds(state, mode, collapsedIds);
 }
 
 function withCollapsedIds(
