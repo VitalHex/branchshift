@@ -112,28 +112,27 @@ export function BranchContextMenu({
             }}
           />
         ) : (
-          <div
+          <button
             key={item.id}
+            type="button"
             role="menuitem"
-            tabIndex={0}
+            disabled={!item.enabled}
             aria-label={item.label}
             aria-disabled={!item.enabled || undefined}
             aria-description={item.disabledReason}
             title={item.disabledReason}
             onClick={item.enabled ? () => onAction(item.id) : undefined}
-            onKeyDown={(event) => {
-              if (
-                item.enabled &&
-                (event.key === "Enter" || event.key === " ")
-              ) {
-                event.preventDefault();
-                onAction(item.id);
-              }
-            }}
             style={{
+              width: "100%",
+              border: 0,
+              padding: "6px 16px",
+              background: "transparent",
               cursor: item.enabled ? "pointer" : "default",
               opacity: item.enabled ? 1 : 0.5,
               color: "var(--vscode-menu-foreground, #ccc)",
+              font: "inherit",
+              fontSize: "13px",
+              textAlign: "left",
               whiteSpace: "nowrap",
             }}
             onMouseEnter={(event) => {
@@ -150,34 +149,8 @@ export function BranchContextMenu({
                 "var(--vscode-menu-foreground, #ccc)";
             }}
           >
-            <button
-              type="button"
-              tabIndex={-1}
-              disabled={!item.enabled}
-              onClick={
-                item.enabled
-                  ? (event) => {
-                      event.stopPropagation();
-                      onAction(item.id);
-                    }
-                  : undefined
-              }
-              style={{
-                width: "100%",
-                border: 0,
-                padding: "6px 16px",
-                background: "transparent",
-                color: "inherit",
-                font: "inherit",
-                fontSize: "13px",
-                textAlign: "left",
-                cursor: "inherit",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {item.label}
-            </button>
-          </div>
+            {item.label}
+          </button>
         ),
       )}
     </div>

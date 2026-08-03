@@ -282,6 +282,40 @@ describe("BranchTree unified refs", () => {
     );
   });
 
+  it("exposes one interactive control per menu action and activates it once", async () => {
+    seedTree(true);
+    useRepoStore.setState({ activeRepoId: "repo-tree" });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+
+    const menu = view.getByRole("menu");
+    const actions = within(menu).getAllByRole("menuitem");
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every((action) => action.tagName === "BUTTON")).toBe(true);
+    expect(within(menu).queryAllByRole("button")).toHaveLength(0);
+
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Compare with Current" }),
+    );
+
+    await waitFor(() => expect(bridge.request).toHaveBeenCalledTimes(1));
+    expect(bridge.request).toHaveBeenCalledWith(
+      "openCompareWithCurrent",
+      {
+        ref: {
+          type: "local",
+          name: "feature/plain",
+          fullRef: "refs/heads/feature/plain",
+        },
+      },
+      { repoId: "repo-tree" },
+    );
+  });
+
   it("compares the right-clicked local branch instead of prior multi-selection", async () => {
     seedTree(true);
     useRepoStore.setState({ activeRepoId: "repo-tree" });
@@ -368,7 +402,7 @@ describe("BranchTree unified refs", () => {
       clientX: 20,
       clientY: 30,
     });
-    fireEvent.click(getByRole("button", { name: "Compare with Current" }));
+    fireEvent.click(getByRole("menuitem", { name: "Compare with Current" }));
 
     await waitFor(() =>
       expect(bridge.request).toHaveBeenCalledWith(
