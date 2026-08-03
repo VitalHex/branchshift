@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -39,6 +40,7 @@ function renderWithStore(ui: ReactElement) {
 }
 
 function seedTree(showTags = true) {
+  useRepoStore.setState({ activeRepoId: "repo-a" });
   panelStore.setState({
     branches: [
       {
@@ -256,6 +258,7 @@ describe("BranchTree unified refs", () => {
           fullRef: "refs/tags/v1.0.0",
         },
         false,
+        "repo-a",
       ),
     );
   });
@@ -495,5 +498,77 @@ describe("BranchTree unified refs", () => {
     fireEvent.click(getByText("origin"));
     expect(getByText("one")).toBeTruthy();
     expect(getByText("two")).toBeTruthy();
+  });
+
+  it("restores grouped collapse state after a flat round trip", () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({ branchGroupByDirectory: true });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.click(view.getByText("feature"));
+    expect(view.queryByText("plain")).toBeNull();
+
+    panelStore.setState({ branchGroupByDirectory: false });
+    view.rerender(<BranchTree />);
+    expect(view.getByText("feature/plain")).toBeTruthy();
+
+    panelStore.setState({ branchGroupByDirectory: true });
+    view.rerender(<BranchTree />);
+    expect(view.queryByText("plain")).toBeNull();
+  });
+
+  it("temporarily expands matching directories without losing collapse state", () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({ branchGroupByDirectory: true });
+    const view = renderWithStore(<BranchTree />);
+    const search = view.getByPlaceholderText("Branch or tag");
+
+    fireEvent.click(view.getByText("feature"));
+    expect(view.queryByText("plain")).toBeNull();
+    fireEvent.change(search, { target: { value: "plain" } });
+    expect(view.getByText("plain")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(view.queryByText("plain")).toBeNull();
+  });
+
+  it("closes a repository-bound menu when the active repository changes", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(view.getByRole("menu")).toBeTruthy();
+
+    act(() => useRepoStore.setState({ activeRepoId: "repo-b" }));
+    view.rerender(<BranchTree />);
+    await waitFor(() => expect(view.queryByRole("menu")).toBeNull());
+  });
+
+  it("shows the real create-branch error", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    vi.mocked(bridge.request).mockRejectedValueOnce(
+      Object.assign(new Error("Repository unavailable"), {
+        code: "REPO_NOT_FOUND",
+        recovery: "Choose an available repository.",
+      }),
+    );
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.click(view.getByText("New Branch from 'feature/plain'..."));
+    fireEvent.change(view.getByLabelText("Branch Name:"), {
+      target: { value: "feature/new" },
+    });
+    fireEvent.click(view.getByRole("button", { name: "Create" }));
+
+    expect(await view.findByText(/Repository unavailable/)).toBeTruthy();
+    expect(view.queryByText(/already exists/)).toBeNull();
   });
 });
