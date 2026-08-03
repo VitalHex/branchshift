@@ -6,7 +6,7 @@ This file records intentionally deferred Git dashboard work so temporary UI remo
 
 The 0.6.2 stability work establishes reusable boundaries for command execution, reference modeling, path parsing, index transactions, shelf mutations, repository-bound requests, commit state, diff actions, and Push state. Future maintenance should continue moving behavior behind these boundaries until each responsibility can be tested and evolved independently.
 
-The next decomposition passes should prioritize graph layout and rendering, branch-tree presentation, comparison sessions, and shared file-tree/detail presentation. Each pass should preserve the existing public behavior and add focused regression coverage before moving the next responsibility.
+Branch-tree presentation decomposition is complete. The next decomposition passes should prioritize graph layout and rendering, comparison sessions, and shared file-tree/detail presentation. Each pass should preserve the existing public behavior and add focused regression coverage before moving to the next responsibility.
 
 ## Branch dashboard
 

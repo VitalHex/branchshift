@@ -1,5 +1,15 @@
 # Changelog / 更新日志
 
+## [0.6.4] - 2026-08-03
+
+### Changed / 变更
+- **Branch dashboard responsibilities** — split branch-tree modeling, state, presentation, and actions into focused modules with regression coverage / 将分支树模型、状态、展示与操作拆分为职责清晰的模块，并补充回归测试
+- **Stable tree presentation** — made grouped and flat views derive consistently while restoring manual directory collapse state after mode and search changes / 统一分组与平铺视图的派生逻辑，并在模式切换与搜索结束后恢复手动目录折叠状态
+- **Repository-bound deferred actions** — branch menus and dialogs retain the repository where each action originated, including after repository switches / 分支菜单与对话框会保留操作发起时的仓库绑定，包括切换仓库后的延迟操作
+
+### Fixed / 修复
+- **Accurate branch action feedback** — action availability reflects upstream and branch state, while mutation failures report the relevant cause without stale messages / 操作可用性会准确反映 upstream 与分支状态，变更失败时显示对应原因且不会残留过期消息
+
 ## [0.6.3] - 2026-07-31
 
 ### Changed / 变更
