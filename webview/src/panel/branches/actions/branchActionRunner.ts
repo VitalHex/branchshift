@@ -242,7 +242,12 @@ export async function submitPush(
     await operations.push(repoId, branchName, force);
     return true;
   } catch (error) {
-    if (ui.isCurrent(repoId)) {
+    const sourceRef: GitRefIdentity = {
+      type: "local",
+      name: branchName,
+      fullRef: `refs/heads/${branchName}`,
+    };
+    if (ui.isCurrent(repoId, sourceRef)) {
       await ui.notifyError("Push failed", formatBranchActionError(error));
     }
     return false;

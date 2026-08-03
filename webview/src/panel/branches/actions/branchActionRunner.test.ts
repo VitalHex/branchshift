@@ -317,12 +317,17 @@ describe("dialog submissions", () => {
     await expect(
       submitPush(
         "repo-a",
-        "feature",
+        "team/feature",
         false,
         stalePorts.operations,
         stalePorts.ui,
       ),
     ).resolves.toBe(false);
+    expect(stalePorts.ui.isCurrent).toHaveBeenCalledWith("repo-a", {
+      type: "local",
+      name: "team/feature",
+      fullRef: "refs/heads/team/feature",
+    });
     expect(stalePorts.ui.notifyError).not.toHaveBeenCalled();
 
     const successPorts = createPorts();
