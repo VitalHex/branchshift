@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -39,6 +40,7 @@ function renderWithStore(ui: ReactElement) {
 }
 
 function seedTree(showTags = true) {
+  useRepoStore.setState({ activeRepoId: "repo-a" });
   panelStore.setState({
     branches: [
       {
@@ -256,11 +258,12 @@ describe("BranchTree unified refs", () => {
           fullRef: "refs/tags/v1.0.0",
         },
         false,
+        "repo-a",
       ),
     );
   });
 
-  it("disables Update in the branch context menu when upstream is missing", () => {
+  it("keeps disabled menu actions focusable without dispatching them", () => {
     seedTree(true);
     const { getByText, getByLabelText } = renderWithStore(<BranchTree />);
 
@@ -271,11 +274,83 @@ describe("BranchTree unified refs", () => {
     const update = getByLabelText("Update");
     expect(update.getAttribute("role")).toBe("menuitem");
     expect(update.getAttribute("aria-disabled")).toBe("true");
+    expect(update.hasAttribute("disabled")).toBe(false);
+    expect((update as HTMLElement).tabIndex).toBe(0);
+    (update as HTMLElement).focus();
+    expect(document.activeElement).toBe(update);
+
     fireEvent.click(update);
+    fireEvent.keyDown(update, { key: "Enter" });
+    fireEvent.keyDown(update, { key: " " });
 
     expect(bridgeWithProgress).not.toHaveBeenCalledWith(
       "updateBranch",
       expect.anything(),
+    );
+  });
+
+  it.each([
+    ["Enter", "Enter"],
+    ["Space", " "],
+  ])("activates an enabled menu action exactly once with %s", async (_label, key) => {
+    seedTree(true);
+    useRepoStore.setState({ activeRepoId: "repo-tree" });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.keyDown(
+      view.getByRole("menuitem", { name: "Compare with Current" }),
+      { key },
+    );
+
+    await waitFor(() => expect(bridge.request).toHaveBeenCalledTimes(1));
+    expect(bridge.request).toHaveBeenCalledWith(
+      "openCompareWithCurrent",
+      {
+        ref: {
+          type: "local",
+          name: "feature/plain",
+          fullRef: "refs/heads/feature/plain",
+        },
+      },
+      { repoId: "repo-tree" },
+    );
+  });
+
+  it("exposes one interactive control per menu action and activates it once", async () => {
+    seedTree(true);
+    useRepoStore.setState({ activeRepoId: "repo-tree" });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+
+    const menu = view.getByRole("menu");
+    const actions = within(menu).getAllByRole("menuitem");
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every((action) => action.tagName === "BUTTON")).toBe(true);
+    expect(within(menu).queryAllByRole("button")).toHaveLength(0);
+
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: "Compare with Current" }),
+    );
+
+    await waitFor(() => expect(bridge.request).toHaveBeenCalledTimes(1));
+    expect(bridge.request).toHaveBeenCalledWith(
+      "openCompareWithCurrent",
+      {
+        ref: {
+          type: "local",
+          name: "feature/plain",
+          fullRef: "refs/heads/feature/plain",
+        },
+      },
+      { repoId: "repo-tree" },
     );
   });
 
@@ -365,7 +440,7 @@ describe("BranchTree unified refs", () => {
       clientX: 20,
       clientY: 30,
     });
-    fireEvent.click(getByRole("button", { name: "Compare with Current" }));
+    fireEvent.click(getByRole("menuitem", { name: "Compare with Current" }));
 
     await waitFor(() =>
       expect(bridge.request).toHaveBeenCalledWith(
@@ -495,5 +570,155 @@ describe("BranchTree unified refs", () => {
     fireEvent.click(getByText("origin"));
     expect(getByText("one")).toBeTruthy();
     expect(getByText("two")).toBeTruthy();
+  });
+
+  it("restores grouped collapse state after a flat round trip", () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({ branchGroupByDirectory: true });
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.click(view.getByText("feature"));
+    expect(view.queryByText("plain")).toBeNull();
+
+    panelStore.setState({ branchGroupByDirectory: false });
+    view.rerender(<BranchTree />);
+    expect(view.getByText("feature/plain")).toBeTruthy();
+
+    panelStore.setState({ branchGroupByDirectory: true });
+    view.rerender(<BranchTree />);
+    expect(view.queryByText("plain")).toBeNull();
+  });
+
+  it("temporarily expands matching directories without losing collapse state", () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({ branchGroupByDirectory: true });
+    const view = renderWithStore(<BranchTree />);
+    const search = view.getByPlaceholderText("Branch or tag");
+
+    fireEvent.click(view.getByText("feature"));
+    expect(view.queryByText("plain")).toBeNull();
+    fireEvent.change(search, { target: { value: "plain" } });
+    expect(view.getByText("plain")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(view.queryByText("plain")).toBeNull();
+  });
+
+  it("closes a repository-bound menu when the active repository changes", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(view.getByRole("menu")).toBeTruthy();
+
+    act(() => useRepoStore.setState({ activeRepoId: "repo-b" }));
+    view.rerender(<BranchTree />);
+    await waitFor(() => expect(view.queryByRole("menu")).toBeNull());
+  });
+
+  it("closes a menu when the checked-out branch changes", async () => {
+    seedTree(false);
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    expect(view.getByRole("menu")).toBeTruthy();
+
+    act(() => panelStore.setState({ currentBranch: "favorite" }));
+    view.rerender(<BranchTree />);
+
+    await waitFor(() => expect(view.queryByRole("menu")).toBeNull());
+  });
+
+  it("does not carry current-row selection into another repository", () => {
+    seedTree(false);
+    const view = renderWithStore(<BranchTree />);
+    const currentRow = view.getByText("Current Branch: main");
+    fireEvent.click(currentRow);
+    expect((currentRow as HTMLElement).style.background).toBe(
+      "var(--selected-bg)",
+    );
+
+    act(() => useRepoStore.setState({ activeRepoId: "repo-b" }));
+    view.rerender(<BranchTree />);
+
+    expect(
+      (view.getByText("Current Branch: main") as HTMLElement).style.background,
+    ).toBe("transparent");
+  });
+
+  it("creates a branch from detached HEAD through the captured repository", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-detached" });
+    panelStore.setState((state) => ({
+      branches: state.branches.map((branch) => ({
+        ...branch,
+        isCurrent: false,
+      })),
+      currentBranch: "",
+      commits: [
+        {
+          hash: "detached-tip",
+          parents: [],
+          authorName: "Test Author",
+          authorEmail: "test@example.com",
+          authorDate: "2026-08-03T00:00:00.000Z",
+          commitDate: "2026-08-03T00:00:00.000Z",
+          subject: "Detached commit",
+          body: "",
+          refs: [{ type: "HEAD", name: "HEAD", fullRef: "HEAD" }],
+        },
+      ] as never[],
+    }));
+    const view = renderWithStore(<BranchTree />);
+
+    fireEvent.click(view.getByRole("button", { name: "New Branch" }));
+    expect(view.getByText("Create Branch from 'HEAD'")).toBeTruthy();
+    fireEvent.change(view.getByLabelText("Branch Name:"), {
+      target: { value: "detached-work" },
+    });
+    fireEvent.click(view.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(bridge.request).toHaveBeenCalledWith(
+        "createBranch",
+        {
+          newBranchName: "detached-work",
+          startPoint: "HEAD",
+          checkout: true,
+          force: false,
+        },
+        { repoId: "repo-detached" },
+      ),
+    );
+  });
+
+  it("shows the real create-branch error", async () => {
+    seedTree(false);
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    vi.mocked(bridge.request).mockRejectedValueOnce(
+      Object.assign(new Error("Repository unavailable"), {
+        code: "REPO_NOT_FOUND",
+        recovery: "Choose an available repository.",
+      }),
+    );
+    const view = renderWithStore(<BranchTree />);
+    fireEvent.contextMenu(view.getByText("feature/plain"), {
+      clientX: 20,
+      clientY: 30,
+    });
+    fireEvent.click(view.getByText("New Branch from 'feature/plain'..."));
+    fireEvent.change(view.getByLabelText("Branch Name:"), {
+      target: { value: "feature/new" },
+    });
+    fireEvent.click(view.getByRole("button", { name: "Create" }));
+
+    expect(await view.findByText(/Repository unavailable/)).toBeTruthy();
+    expect(view.queryByText(/already exists/)).toBeNull();
   });
 });

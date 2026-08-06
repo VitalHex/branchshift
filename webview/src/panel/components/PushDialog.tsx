@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface PushDialogProps {
   branchName: string;
   onClose: () => void;
-  onPush: (force: boolean) => void;
+  onPush: (force: boolean) => Promise<void>;
 }
 
 export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
   const backdropRef = useRef<HTMLDivElement>(null);
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -26,6 +28,21 @@ export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
       }
     },
     [onClose],
+  );
+
+  const handlePush = useCallback(
+    async (force: boolean) => {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        await onPush(force);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    },
+    [onPush],
   );
 
   return (
@@ -88,7 +105,8 @@ export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
         >
           <button
             type="button"
-            onClick={() => onPush(true)}
+            onClick={() => void handlePush(true)}
+            disabled={submitting}
             style={{
               background: "transparent",
               color: "var(--vscode-errorForeground, #f48771)",
@@ -97,7 +115,8 @@ export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
               padding: "4px 14px",
               fontSize: 12,
               height: 28,
-              cursor: "pointer",
+              cursor: submitting ? "default" : "pointer",
+              opacity: submitting ? 0.4 : 1,
               fontWeight: 500,
             }}
           >
@@ -122,7 +141,8 @@ export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
           </button>
           <button
             type="button"
-            onClick={() => onPush(false)}
+            onClick={() => void handlePush(false)}
+            disabled={submitting}
             style={{
               background: "var(--button-bg)",
               color: "var(--button-fg)",
@@ -131,7 +151,8 @@ export function PushDialog({ branchName, onClose, onPush }: PushDialogProps) {
               padding: "4px 14px",
               fontSize: 12,
               height: 28,
-              cursor: "pointer",
+              cursor: submitting ? "default" : "pointer",
+              opacity: submitting ? 0.4 : 1,
             }}
           >
             Push

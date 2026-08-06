@@ -117,7 +117,11 @@ export interface PanelStore {
     mode: "single" | "toggle" | "range",
     allVisibleRefs: GitRefIdentity[],
   ) => void;
-  setFavorite: (ref: GitRefIdentity, favorite: boolean) => Promise<void>;
+  setFavorite: (
+    ref: GitRefIdentity,
+    favorite: boolean,
+    repoId?: string,
+  ) => Promise<void>;
   loadBranchDashboardPreferences: () => Promise<void>;
   setBranchDashboardPreferences: (patch: {
     showTags?: boolean;
@@ -410,6 +414,27 @@ export function createGitLogStore(options: GitLogStoreOptions): GitLogStore {
       ? useRepoStore.getState().activeRepoId
       : options.repoId;
 
+  function surfaceRepoId(requestOptions?: BridgeRequestOptions): string | null {
+    if (requestOptions?.scope === "global") return null;
+    if (!options.followGlobalActiveRepo) return options.repoId;
+    return requestOptions?.repoId ?? boundRepoId();
+  }
+
+  function resolveSurfaceRequest(requestOptions?: BridgeRequestOptions): {
+    repoId: string | null;
+    requestOptions?: BridgeRequestOptions;
+  } {
+    const repoId = surfaceRepoId(requestOptions);
+    if (requestOptions?.scope === "global") {
+      return { repoId, requestOptions: { scope: "global" } };
+    }
+    return {
+      repoId,
+      requestOptions:
+        repoId === null ? requestOptions : { ...requestOptions, repoId },
+    };
+  }
+
   function request(
     command: CommandType,
     params?: Record<string, unknown>,
@@ -435,12 +460,8 @@ export function createGitLogStore(options: GitLogStoreOptions): GitLogStore {
     params?: Record<string, unknown>,
     requestOptions?: BridgeRequestOptions,
   ): Promise<unknown> {
-    const repoId = boundRepoId();
-    const boundOptions =
-      requestOptions?.scope !== "global" && repoId !== null
-        ? { ...requestOptions, repoId }
-        : requestOptions;
-    return options.bridge.request(command, params, boundOptions);
+    const resolved = resolveSurfaceRequest(requestOptions);
+    return options.bridge.request(command, params, resolved.requestOptions);
   }
 
   const revision =
@@ -502,14 +523,15 @@ export function createGitLogStore(options: GitLogStoreOptions): GitLogStore {
       options.history.kind === "comparison" ? "comparison" : "surface",
     requestFromSurface,
     async requestWithProgressFromSurface(command, params, requestOptions) {
-      const repoId = boundRepoId();
+      const resolved = resolveSurfaceRequest(requestOptions);
+      const { repoId } = resolved;
       if (repoId !== null) beginClientOperationProgress(repoId);
       const start = Date.now();
       try {
-        const result = await requestFromSurface(
+        const result = await options.bridge.request(
           command,
           params,
-          requestOptions,
+          resolved.requestOptions,
         );
         const elapsed = Date.now() - start;
         if (elapsed < 1000) {
@@ -1160,8 +1182,13 @@ export function createGitLogStore(options: GitLogStoreOptions): GitLogStore {
       set({ selectedRefs: allVisibleRefs.slice(start, end + 1) });
     },
 
-    async setFavorite(ref, favorite) {
-      await request("setFavorite", { ref, favorite });
+    async setFavorite(ref, favorite, repoId) {
+      await request(
+        "setFavorite",
+        { ref, favorite },
+        repoId === undefined ? undefined : { repoId },
+      );
+      if (repoId !== undefined && repoId !== boundRepoId()) return;
       set((state) => ({
         branches: state.branches.map((branch) => {
           const type = branch.isRemote ? "remote" : "local";

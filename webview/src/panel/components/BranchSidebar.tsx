@@ -1,8 +1,18 @@
 import { useCallback, useRef, useState } from "react";
-import { bridge, bridgeWithProgress } from "../../shared/bridge";
+import CodiconListFlat from "~icons/codicon/list-flat";
+import CodiconListTree from "~icons/codicon/list-tree";
 import { Tooltip } from "../../shared/components/Tooltip";
 import "../../shared/components/Tooltip.css";
 import { useGitLogStore } from "../../shared/store/git-log-store-context";
+import type { PanelStore } from "../../shared/store/panel-store";
+import type { GitRefIdentity } from "../../shared/types/git";
+import {
+  type BranchActionUi,
+  formatBranchActionError,
+  notifyBranchActionErrorIfCurrent,
+} from "../branches/actions/branchActionRunner";
+import { useBranchOperations } from "../branches/branchOperations";
+import { refKey } from "../utils/refUtils";
 
 export function BranchSidebar({
   onTogglePanel,
@@ -14,8 +24,11 @@ export function BranchSidebar({
   const selectedRefs = useGitLogStore((s) => s.selectedRefs);
   const branches = useGitLogStore((s) => s.branches);
   const tags = useGitLogStore((s) => s.tags);
-  const setFavorite = useGitLogStore((s) => s.setFavorite);
+  const actionRepoId = useGitLogStore((s) => s.actionRepoId);
+  const requestFromSurface = useGitLogStore((s) => s.requestFromSurface);
   const navigateToRef = useGitLogStore((s) => s.navigateToRef);
+  const operations = useBranchOperations();
+  const mutationRepoId = actionRepoId();
   const selectedRef = selectedRefs.length === 1 ? selectedRefs[0] : null;
   const selectedBranch = selectedRef
     ? branches.find(
@@ -34,6 +47,17 @@ export function BranchSidebar({
     selectedBranch?.isFavorite ?? selectedTag?.isFavorite;
   const selectedTargetHash =
     selectedBranch?.lastCommitHash ?? selectedTag?.targetCommitHash;
+  const latestSelectedRef = useRef(selectedRef);
+  latestSelectedRef.current = selectedRef;
+  const isActionCurrent = useCallback(
+    (repoId: string, ref?: GitRefIdentity) => {
+      if (actionRepoId() !== repoId) return false;
+      if (!ref) return true;
+      const currentRef = latestSelectedRef.current;
+      return currentRef !== null && refKey(currentRef) === refKey(ref);
+    },
+    [actionRepoId],
+  );
   const branchGroupByDirectory = useGitLogStore(
     (s) => s.branchGroupByDirectory,
   );
@@ -41,45 +65,99 @@ export function BranchSidebar({
     (s) => s.toggleBranchGroupByDirectory,
   );
 
-  const handleNewBranch = useCallback(() => {
+  const handleNewBranch = useCallback(async () => {
+    const repoId = actionRepoId();
+    if (!repoId) return;
     if (onNewBranch) {
       onNewBranch();
     } else {
-      bridge.request("createBranchPrompt", {});
+      await runSidebarAction(
+        () => operations.createPrompt(repoId),
+        "Create branch failed",
+        { repoId },
+        isActionCurrent,
+        requestFromSurface,
+      );
     }
-  }, [onNewBranch]);
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    onNewBranch,
+    operations,
+    requestFromSurface,
+  ]);
 
   const handleUpdateSelected = useCallback(async () => {
-    if (!selectedLocalBranch?.upstream) return;
-    try {
-      await bridgeWithProgress("updateBranch", {
-        branchName: selectedLocalBranch.name,
-      });
-    } catch (error) {
-      await showActionError("Update failed", error);
-    }
-  }, [selectedLocalBranch]);
+    if (!selectedRef || !selectedLocalBranch?.upstream) return;
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.update(repoId, selectedLocalBranch.name),
+      "Update failed",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
+      requestFromSurface,
+    );
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    operations,
+    requestFromSurface,
+    selectedLocalBranch,
+    selectedRef,
+  ]);
 
-  const handleDeleteBranch = useCallback(() => {
-    if (selectedLocalBranch) {
-      bridge.request("deleteBranchPrompt", {
-        branchName: selectedLocalBranch.name,
-      });
-    }
-  }, [selectedLocalBranch]);
+  const handleDeleteBranch = useCallback(async () => {
+    if (!selectedRef || !selectedLocalBranch) return;
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.deletePrompt(repoId, selectedLocalBranch.name),
+      "Delete failed",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
+      requestFromSurface,
+    );
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    operations,
+    requestFromSurface,
+    selectedLocalBranch,
+    selectedRef,
+  ]);
 
-  const handleFetch = useCallback(() => {
-    bridge.request("fetchAll");
-  }, []);
+  const handleFetch = useCallback(async () => {
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.fetch(repoId),
+      "Fetch failed",
+      { repoId },
+      isActionCurrent,
+      requestFromSurface,
+    );
+  }, [actionRepoId, isActionCurrent, operations, requestFromSurface]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!selectedRef || selectedFavorite === undefined) return;
-    try {
-      await setFavorite(selectedRef, !selectedFavorite);
-    } catch (error) {
-      await showActionError("Could not update favorite", error);
-    }
-  }, [selectedFavorite, selectedRef, setFavorite]);
+    const repoId = actionRepoId();
+    if (!repoId) return;
+    await runSidebarAction(
+      () => operations.setFavorite(repoId, selectedRef, !selectedFavorite),
+      "Could not update favorite",
+      { repoId, ref: selectedRef },
+      isActionCurrent,
+      requestFromSurface,
+    );
+  }, [
+    actionRepoId,
+    isActionCurrent,
+    operations,
+    requestFromSurface,
+    selectedFavorite,
+    selectedRef,
+  ]);
 
   const handleNavigateToHead = useCallback(async () => {
     if (!selectedRef || !selectedTargetHash) return;
@@ -113,6 +191,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="New Branch"
           onClick={handleNewBranch}
+          disabled={!mutationRepoId}
         >
           <IconAdd />
         </button>
@@ -134,7 +213,7 @@ export function BranchSidebar({
               : undefined
           }
           onClick={handleUpdateSelected}
-          disabled={!selectedLocalBranch?.upstream}
+          disabled={!mutationRepoId || !selectedLocalBranch?.upstream}
         >
           <IconUpdate />
         </button>
@@ -145,7 +224,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Delete Branch"
           onClick={handleDeleteBranch}
-          disabled={!selectedLocalBranch}
+          disabled={!mutationRepoId || !selectedLocalBranch}
         >
           <IconDelete />
         </button>
@@ -156,6 +235,7 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Fetch"
           onClick={handleFetch}
+          disabled={!mutationRepoId}
         >
           <IconFetch />
         </button>
@@ -166,7 +246,9 @@ export function BranchSidebar({
           className="branch-sidebar-btn"
           aria-label="Mark/Unmark As Favorite"
           onClick={handleToggleFavorite}
-          disabled={!selectedRef || selectedFavorite === undefined}
+          disabled={
+            !mutationRepoId || !selectedRef || selectedFavorite === undefined
+          }
         >
           <IconStar />
         </button>
@@ -189,9 +271,12 @@ export function BranchSidebar({
         <button
           type="button"
           className={`branch-sidebar-btn${branchGroupByDirectory ? " active" : ""}`}
+          aria-label={
+            branchGroupByDirectory ? "Flatten List" : "Group By Directory"
+          }
           onClick={toggleBranchGroupByDirectory}
         >
-          <IconListFiles />
+          {branchGroupByDirectory ? <CodiconListFlat /> : <CodiconListTree />}
         </button>
       </Tooltip>
 
@@ -319,12 +404,35 @@ function SettingsMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-async function showActionError(prefix: string, error: unknown): Promise<void> {
-  if ((error as { code?: string })?.code === "STALE_RESPONSE") return;
-  const message = error instanceof Error ? error.message : String(error);
-  await bridge.request(
+async function runSidebarAction(
+  operation: () => Promise<void>,
+  title: string,
+  context: { repoId: string; ref?: GitRefIdentity },
+  isCurrent: BranchActionUi["isCurrent"],
+  request: PanelStore["requestFromSurface"],
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    const formatted = formatBranchActionError(error);
+    if (formatted.code === "STALE_RESPONSE") return;
+    await notifyBranchActionErrorIfCurrent(title, formatted, context, {
+      isCurrent,
+      notifyError: (errorTitle, currentError) =>
+        notifyActionError(request, errorTitle, currentError),
+    });
+  }
+}
+
+async function notifyActionError(
+  request: PanelStore["requestFromSurface"],
+  title: string,
+  error: Parameters<BranchActionUi["notifyError"]>[1],
+): Promise<void> {
+  const recovery = error.recovery ? `\n${error.recovery}` : "";
+  await request(
     "showErrorNotification",
-    { message: `${prefix}: ${message}` },
+    { message: `${title}: ${error.message}${recovery}` },
     { scope: "global" },
   );
 }
@@ -442,31 +550,6 @@ function IconSettings() {
         strokeLinejoin="round"
       />
       <circle cx="8" cy="8" r="2" stroke="currentColor" />
-    </svg>
-  );
-}
-
-/** expui/actions/groupByPackage.svg – folder inside brackets */
-function IconListFiles() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M2 3.5V12.5M2 3.5H3.5M2 12.5H3.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 3.5V12.5M14 3.5H12.5M14 12.5H12.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5.5 6H7L8 7H10.5V10.5H5.5V6Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
