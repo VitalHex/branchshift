@@ -61,6 +61,77 @@ afterEach(() => {
 });
 
 describe("CommitList ref navigation", () => {
+  it("does not paint a container outline when the commit list receives focus", () => {
+    const view = render(<CommitList />, { wrapper: StoreWrapper });
+    const list = view.getByLabelText("Commit list");
+
+    fireEvent.focus(list);
+
+    expect(list.style.outline).toBe("none");
+  });
+
+  it("aligns the Message header with every commit subject", () => {
+    const commit = (hash: string, subject: string) =>
+      ({
+        hash,
+        shortHash: hash,
+        parents: [],
+        authorName: "Ada",
+        authorEmail: "ada@example.com",
+        authorDate: "2026-07-18T00:00:00.000Z",
+        subject,
+        body: "",
+        refs: [],
+      }) as never;
+    const commits = [
+      commit("lane-zero", "Lane zero"),
+      commit("lane-two", "Lane two"),
+    ];
+    panelStore.setState({
+      commits,
+      visibleCommits: commits,
+      graphLayout: {
+        "lane-zero": { column: 0, color: 0, lines: [] },
+        "lane-two": { column: 2, color: 1, lines: [] },
+      },
+    });
+
+    const view = render(<CommitList />, { wrapper: StoreWrapper });
+    const header = view.getByText("Message").parentElement as HTMLElement;
+    const firstRow = view
+      .getByText("Lane zero")
+      .closest(".commit-row") as HTMLElement;
+    const secondRow = view
+      .getByText("Lane two")
+      .closest(".commit-row") as HTMLElement;
+
+    expect(firstRow.style.paddingLeft).toBe(header.style.paddingLeft);
+    expect(secondRow.style.paddingLeft).toBe(header.style.paddingLeft);
+  });
+
+  it("left-aligns the Date header with the commit date values", () => {
+    const commit = {
+      hash: "date-header",
+      shortHash: "date-header",
+      parents: [],
+      authorName: "Ada",
+      authorEmail: "ada@example.com",
+      authorDate: "2026-07-18T00:00:00.000Z",
+      subject: "Date header",
+      body: "",
+      refs: [],
+    } as never;
+    panelStore.setState({ commits: [commit], visibleCommits: [commit] });
+
+    const view = render(<CommitList />, { wrapper: StoreWrapper });
+    expect((view.getByText("Date") as HTMLElement).style.textAlign).toBe(
+      "left",
+    );
+    expect(
+      (view.getByText("2026-07-18 08:00") as HTMLElement).style.textAlign,
+    ).toBe("left");
+  });
+
   it("scrolls the requested ref target into the center and consumes it", async () => {
     const commit = (hash: string) =>
       ({

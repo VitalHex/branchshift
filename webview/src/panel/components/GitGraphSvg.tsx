@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type Ref, useMemo, useState } from "react";
 import { useGitLogStore } from "../../shared/store/git-log-store-context";
 import type {
   CollapsibleSequence,
@@ -216,10 +216,12 @@ function computeCollapsibleSequences(
 // ── Component ──────────────────────────────────────────────────────
 
 export function GitGraphSvg({
+  scrollGroupRef,
   scrollTop,
   height,
   topOffset = 0,
 }: {
+  scrollGroupRef?: Ref<SVGGElement>;
   scrollTop: number;
   height: number;
   topOffset?: number;
@@ -455,7 +457,7 @@ export function GitGraphSvg({
       }}
       aria-hidden="true"
     >
-      <g transform={`translate(0, ${-scrollTop})`}>
+      <g ref={scrollGroupRef} transform={`translate(0, ${-scrollTop})`}>
         {visibleLines.map((line) => {
           const hasSeq = !!line.sequenceId;
           const isSeqHovered = hasSeq && line.sequenceId === hoveredSequenceId;

@@ -60,6 +60,24 @@ afterEach(() => {
 });
 
 describe("BranchSidebar ref actions", () => {
+  it("exposes the action matching the current branch tree mode", () => {
+    useRepoStore.setState({ activeRepoId: "repo-a" });
+    panelStore.setState({ branchGroupByDirectory: false });
+    const { getByRole, rerender } = renderWithStore(<BranchSidebar />);
+
+    const groupedButton = getByRole("button", { name: "Group By Directory" });
+    const groupedIcon = groupedButton.querySelector("svg")?.outerHTML;
+    expect(groupedIcon).toBeTruthy();
+
+    act(() => panelStore.setState({ branchGroupByDirectory: true }));
+    rerender(<BranchSidebar />);
+    const flattenedIcon = getByRole("button", {
+      name: "Flatten List",
+    }).querySelector("svg")?.outerHTML;
+    expect(flattenedIcon).toBeTruthy();
+    expect(flattenedIcon).not.toBe(groupedIcon);
+  });
+
   it("binds sidebar mutations to the repository active when each action is clicked", async () => {
     useRepoStore.setState({ activeRepoId: "repo-a" });
     const ref = {

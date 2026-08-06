@@ -95,4 +95,33 @@ describe("CommitRow reachability styling", () => {
       ),
     ).toBe(true);
   });
+
+  it("left-aligns the date value within its metadata column", () => {
+    const commit = {
+      hash: "date123",
+      shortHash: "date123",
+      parents: [],
+      authorName: "Ada",
+      authorEmail: "ada@example.com",
+      authorDate: "2026-07-18T00:00:00.000Z",
+      subject: "Date alignment",
+      body: "",
+      refs: [],
+    };
+
+    const { getByText } = render(
+      <CommitRow
+        commit={commit}
+        lane={{ column: 0, color: 0, lines: [] }}
+        rowMaxColumn={0}
+        columnWidths={{ author: 100, date: 130, hash: 70 }}
+        visibleColumns={{ author: true, date: true, hash: true }}
+        onCommitClick={() => {}}
+      />,
+      { wrapper: StoreWrapper },
+    );
+
+    const date = getByText("2026-07-18 08:00");
+    expect((date as HTMLElement).style.textAlign).toBe("left");
+  });
 });

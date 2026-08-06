@@ -9,6 +9,10 @@ const COLUMN_WIDTH = 10;
 const GRAPH_PADDING = 6;
 const NODE_TEXT_GAP = 14;
 
+export function getCommitMessageOffset(maxColumn: number): number {
+  return GRAPH_PADDING + (maxColumn + 1) * COLUMN_WIDTH + NODE_TEXT_GAP;
+}
+
 /** Tag icon colors matching IDEA */
 const REF_ICON_COLORS: Record<string, string> = {
   branch: "#59a869",
@@ -211,8 +215,7 @@ export function CommitRow({
         display: "flex",
         alignItems: "center",
         height: ROW_HEIGHT,
-        paddingLeft:
-          GRAPH_PADDING + (rowMaxColumn + 1) * COLUMN_WIDTH + NODE_TEXT_GAP,
+        paddingLeft: getCommitMessageOffset(rowMaxColumn),
         paddingRight: 8,
         color: isSelected ? "var(--selected-fg)" : "inherit",
       }}
@@ -343,7 +346,7 @@ export function CommitRow({
             style={{
               flexShrink: 0,
               width: columnWidths.date,
-              textAlign: "right",
+              textAlign: "left",
               opacity: 0.5,
               paddingLeft: 8,
             }}

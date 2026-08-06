@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from "react";
+import CodiconListFlat from "~icons/codicon/list-flat";
+import CodiconListTree from "~icons/codicon/list-tree";
 import { Tooltip } from "../../shared/components/Tooltip";
 import "../../shared/components/Tooltip.css";
 import { useGitLogStore } from "../../shared/store/git-log-store-context";
@@ -269,9 +271,12 @@ export function BranchSidebar({
         <button
           type="button"
           className={`branch-sidebar-btn${branchGroupByDirectory ? " active" : ""}`}
+          aria-label={
+            branchGroupByDirectory ? "Flatten List" : "Group By Directory"
+          }
           onClick={toggleBranchGroupByDirectory}
         >
-          <IconListFiles />
+          {branchGroupByDirectory ? <CodiconListFlat /> : <CodiconListTree />}
         </button>
       </Tooltip>
 
@@ -545,31 +550,6 @@ function IconSettings() {
         strokeLinejoin="round"
       />
       <circle cx="8" cy="8" r="2" stroke="currentColor" />
-    </svg>
-  );
-}
-
-/** expui/actions/groupByPackage.svg – folder inside brackets */
-function IconListFiles() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M2 3.5V12.5M2 3.5H3.5M2 12.5H3.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 3.5V12.5M14 3.5H12.5M14 12.5H12.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5.5 6H7L8 7H10.5V10.5H5.5V6Z"
-        stroke="currentColor"
-        strokeLinejoin="round"
-      />
     </svg>
   );
 }
